@@ -1,0 +1,89 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: "agent_019d44b4_ea89_71c0_bc18_540aaee3e201.log"
+
+apps:
+  - name: "agent_019d44b4_ea89_71c0_bc18_540aaee3e201"
+    app_base_path: "."
+    app_module: "solace_agent_mesh.agent.sac.app"
+    broker:
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8008}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+    app_config:
+      namespace: "${NAMESPACE}"
+      supports_streaming: true
+      agent_name: "agent_019d44b4_ea89_71c0_bc18_540aaee3e201"
+      display_name: "Vessel Intelligence Agent"
+      
+      max_llm_calls: 2
+      instruction: |
+        You are a Vessel Intelligence Agent. Retrieve vessel data via the Vessel Data API and present key compliance fields.
+
+        WORKFLOW (complete in ONE pass):
+        1. Validate the IMO number (7 digits)
+        2. Call get_ship_data_by_ihsl_ror_imo once
+        3. Extract and present these key fields in a structured table:
+           ShipStatus, ShipFlagDisputed, ShipOwnerUNSanctionList, FlagName,
+           ShipOFACSSIList, ShipUSTreasuryOFACAdvisoryList, ShipDarkActivityIndicator
+        4. Highlight any non-zero compliance flags with a brief risk note
+
+        RULES:
+        - Do NOT create charts or use data_analysis tools — present as text/tables
+        - Do NOT make multiple API calls — one call is sufficient
+        - Be concise — structured data with brief risk notes only
+      model:
+        model: "${LLM_SERVICE_GENERAL_MODEL_NAME}"
+        api_base: "${LLM_SERVICE_ENDPOINT}"
+        api_key: "${LLM_SERVICE_API_KEY}"
+        timeout: 30
+        stream_timeout: 30
+      tools:
+        - tool_type: openapi
+          specification_url: "http://localhost:8333/solace-agent-mesh-local-connector-specs/solace-agent-mesh-local/openapi/019d4815-0f81-7c13-861e-54635e835241/20260401-080713-ship-data-openapi.json"
+          base_url: ${BASE_URL_019D44A3_8F99_77E3_93E5_AE69103073A1}
+          allow_list: ["getShipDataByIHSLRorIMO"]
+          auth:
+            type: "basic"
+            username: ${AUTH_HTTP_BASIC_USERNAME_019D44A3_8F99_77E3_93E5_AE69103073A1}
+            password: ${AUTH_HTTP_BASIC_PASSWORD_019D44A3_8F99_77E3_93E5_AE69103073A1}
+      session_service:
+        type: ${PERSISTENCE_TYPE, sql}
+        database_url: ${DATABASE_URL, sqlite:///agent_019d44b4_ea89_71c0_bc18_540aaee3e201.db}
+        default_behavior: PERSISTENT
+      artifact_service:
+        type: "filesystem"
+        base_path: "/tmp/samv2"
+        artifact_scope: namespace
+      artifact_handling_mode: ignore
+      enable_embed_resolution: false
+      enable_artifact_content_instruction: false
+      agent_card:
+        description: "Specialized agent for retrieving and analyzing vessel data using IMO numbers. Provides comprehensive vessel intelligence including status, flag information, sanctions screening, and risk indicators."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "vessel_status_verification"
+            name: "Vessel Status Verification"
+            description: "Retrieve and analyze current operational status of vessels using IMO numbers, including active/inactive status and operational conditions."
+          - id: "sanctions_compliance_screening"
+            name: "Sanctions Compliance Screening"
+            description: "Check vessels and vessel owners against UN sanctions lists, OFAC lists, and Treasury advisory lists to identify compliance risks."
+          - id: "flag_state_analysis"
+            name: "Flag State Analysis"
+            description: "Analyze vessel flag registration details, identify disputed flags, and assess flag state compliance implications."
+          - id: "dark_activity_detection"
+            name: "Dark Activity Detection"
+            description: "Identify and report on dark activity indicators that may suggest vessel tracking manipulation or suspicious vessel behavior."
+      agent_card_publishing:
+        interval_seconds: 60
+      agent_discovery:
+        enabled: false
+      inter_agent_communication:
+        allow_list: ["agent_019d5e28_9723_74e3_ac3e_9f50e2f20890"]
+        deny_list: ["*"]
+        request_timeout_seconds: 30

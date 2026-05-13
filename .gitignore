@@ -1,0 +1,20 @@
+# Python virtual environments
+.venv/
+__pycache__/
+*.pyc
+
+# SAM internal
+.sam/
+
+# Sensitive files
+.env
+*.key
+
+# Logs
+*.log
+
+# SQLite databases
+*.db
+
+# OS files
+.DS_Store

@@ -1,0 +1,267 @@
+# RAG Agent Values
+# Deploy the RAG agent using the sam-agent chart:
+#
+#   helm install sam-rag-agent ./sam-agent \
+#     -f rag-agent-values.yaml \
+#     -n YOUR_NAMESPACE
+#
+# Prerequisites:
+#   1. Qdrant must be running and accessible
+#      helm repo add qdrant https://qdrant.github.io/qdrant-helm
+#      helm install qdrant qdrant/qdrant \
+#        --set image.tag=v1.13.2 \
+#        --set persistence.enabled=true \
+#        -n YOUR_NAMESPACE
+#
+#   2. Update the values below with your actual configuration
+
+# Agent identifier (required)
+id: "rag-agent"
+component: "agent"
+deploymentMode: "standalone"
+
+# Use the enterprise image (same as the main SAM deployment)
+image:
+  repository: solace-agent-mesh-enterprise
+  tag: 1.97.4
+  pullPolicy: IfNotPresent
+
+# Enable RAG - installs sam_rag plugin via init container
+#
+# Option A (default): Install from GitHub zip archive (requires internet access)
+#   rag.wheelConfigMapName: ""
+#
+# Option B (air-gapped): Install from pre-loaded wheel ConfigMap
+#   1. First create the ConfigMap (one-time setup):
+#      kubectl create configmap sam-rag-wheel \
+#        --from-file=sam_rag-0.1.0-py3-none-any.whl \
+#        -n YOUR_NAMESPACE
+#   2. Then set wheelConfigMapName below
+#
+
+
+# Solace Broker - MUST match your main SAM deployment
+solaceBroker:
+  url: "ws://sam-broker-pubsubplus-dev.default.svc.cluster.local:8008"       # e.g., wss://mr2zq0g0f1.messaging.solace.cloud:443
+  username: "default"                                                        # e.g., your Solace Cloud client username
+  password: "default"                                                       # e.g., your Solace Cloud client password
+  vpn: "default"                                                               # e.g., your Solace Cloud message VPN
+  useTemporaryQueues: false
+
+# LLM Service - MUST match your main SAM deployment
+#llmService:
+  #generalModelName: "openai/vertex-claude-4-sonnet"             # or your model name
+  #endpoint: "https://lite-llm.mymaas.net"  # or your LiteLLM endpoint
+  #apiKey: "sk-5UZnKnP525zDo8BolXO7DQ"
+
+llmService:
+  generalModelName: "openai/qwen3.5-27b"             # or your model name
+  endpoint: "http://192.168.68.111:11435/v1"  # or your LiteLLM endpoint
+  apiKey: "LM_STUDIO"  
+
+
+# RAG-specific environment variables
+# QDRANT_URL: use the K8s service name of your Qdrant deployment
+# Format: http://RELEASE-NAME-qdrant:6333
+# If you installed Qdrant with: helm install qdrant qdrant/qdrant -n my-namespace
+# Then the URL is: http://qdrant:6333
+environmentVariables:
+  NAMESPACE: "solace-agent-mesh-local"
+  QDRANT_URL: "http://qdrant:6333"                    # CHANGE: your Qdrant service URL
+  QDRANT_COLLECTION: "sam-documents"
+  #QDRANT_EMBEDDING_DIMENSION: "3072"
+  QDRANT_EMBEDDING_DIMENSION: "40960"
+  #OPENAI_EMBEDDING_MODEL: "text-embedding-3-large"
+  OPENAI_EMBEDDING_MODEL: "text-embedding-qwen3-8b-text-embedding"
+  #OPENAI_EMBEDDING_MODEL: "openai/qwen3-embedding:8b"
+  OPENAI_EMBEDDING_API_KEY: "dummy"
+  
+  #OPENAI_EMBEDDING_ENDPOINT: "https://api.openai.com/v1"  
+  #OPENAI_EMBEDDING_ENDPOINT: "http://192.168.49.1:1234/v1"
+  OPENAI_EMBEDDING_ENDPOINT: "http://192.168.68.111:11435/v1"
+  #OPENAI_EMBEDDING_ENDPOINT: "http://172.16.1.37:11434/v1"
+  #LLM_SERVICE_ENDPOINT: "https://lite-llm.mymaas.net"
+  LLM_SERVICE_ENDPOINT: "http://192.168.68.111:11435/v1"
+    # or your embedding model
+  #QDRANT_API_KEY: ""                                # uncomment if Qdrant has auth
+  
+# Persistence - use same settings as your main SAM deployment
+persistence:
+  existingSecrets:
+    database: "rag-db-secret"  # Name of secret with DATABASE_URL, or configure below
+    s3: ""        # Name of secret with S3 credentials, or configure below
+
+  # Direct database configuration (if not using existingSecrets.database)
+  database:
+    protocol: "postgresql+psycopg2"
+    host: "agent-mesh-postgresql"
+    port: "5432"
+    username: "postgres"
+    password: "password"
+    database: "rag_agent_db"
+
+  # Direct S3 configuration (if not using existingSecrets.s3)
+  s3:
+    endpointUrl: "http://agent-mesh-seaweedfs:8333"
+    bucketName: "solace-agent-mesh-local"
+    accessKey: "solace-agent-mesh-local"
+    secretKey: "solace-agent-mesh-local"
+
+resources:
+  sam:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+
+# The agent config YAML - this is the RAG agent configuration
+# It will be mounted as /app/config/agent.yaml in the container
+config:
+  yaml: |
+    log:
+      stdout_log_level: INFO
+      log_file_level: DEBUG
+      log_file: rag-agent.log
+
+    shared_config:
+      - broker_connection: &broker_connection
+          dev_mode: ${SOLACE_DEV_MODE, false}
+          broker_url: ${SOLACE_BROKER_URL}
+          broker_username: ${SOLACE_BROKER_USERNAME}
+          broker_password: ${SOLACE_BROKER_PASSWORD}
+          broker_vpn: ${SOLACE_BROKER_VPN}
+          temporary_queue: ${USE_TEMPORARY_QUEUES, false}
+
+      - models:
+        general: &general_model
+          model: ${LLM_SERVICE_GENERAL_MODEL_NAME}
+          api_base: ${LLM_SERVICE_ENDPOINT}
+          api_key: ${LLM_SERVICE_API_KEY}
+
+    apps:
+      - name: rag-agent-app
+        app_module: solace_agent_mesh.agent.sac.app
+        broker:
+          <<: *broker_connection
+        app_config:
+          namespace: ${NAMESPACE}
+          agent_name: "RagAgent"
+          display_name: "MPA Knowledge Agent"
+          supports_streaming: true
+
+          model: *general_model
+          instruction: |
+            You are the RAG (Retrieval Augmented Generation) Agent, a specialized document management and retrieval assistant.
+            Your capabilities include:
+            1. Document Ingestion: Ingest documents from various sources into the vector database.
+            2. Semantic Search: Search for relevant information across all ingested documents.
+            3. Augmented Responses: Provide answers augmented with relevant document context.
+            When users ask questions, first search the document database for relevant information.
+            Always cite the source documents when providing information.
+
+          agent_init_function:
+            module: "sam_rag.lifecycle"
+            name: "initialize_rag_agent"
+            config:
+              scanner:
+                batch: true
+                use_memory_storage: true
+                sources:
+                  - type: filesystem
+                    directories:
+                      - "${DOCUMENTS_PATH, /tmp/sam-rag/documents}"
+                    filters:
+                      file_formats: [".txt", ".pdf", ".docx", ".md", ".html", ".csv", ".json"]
+                      max_file_size: 10240
+                    schedule:
+                      interval: 60
+              splitter:
+                default:
+                  method: CharacterTextSplitter
+                  params:
+                    chunk_size: 2048
+                    chunk_overlap: 800
+                    separator: " "
+              embedding:
+                embedder_type: "openai"
+                embedder_params:
+                  model: "${OPENAI_EMBEDDING_MODEL, text-embedding-3-large}"
+                  api_key: "${OPENAI_EMBEDDING_API_KEY}"
+                  api_base: "${OPENAI_EMBEDDING_ENDPOINT}"
+                  batch_size: 32
+                normalize_embeddings: true
+              vector_db:
+                db_type: "qdrant"
+                db_params:
+                  url: "${QDRANT_URL, http://localhost:6333}"
+                  api_key: "${QDRANT_API_KEY, }"
+                  collection_name: "${QDRANT_COLLECTION, sam-documents}"
+                  embedding_dimension: ${QDRANT_EMBEDDING_DIMENSION, 3072}
+              llm:
+                load_balancer:
+                  - model_name: "gpt-4o"
+                    litellm_params:
+                      model: openai/${LLM_SERVICE_GENERAL_MODEL_NAME}
+                      api_key: ${LLM_SERVICE_API_KEY}
+                      api_base: ${LLM_SERVICE_ENDPOINT}
+                      temperature: 0.01
+              retrieval:
+                top_k: 5
+
+          agent_cleanup_function:
+            module: "sam_rag.lifecycle"
+            name: "cleanup_rag_agent_resources"
+
+          tools:
+            - tool_type: python
+              component_module: "sam_rag.tools"
+              function_name: "ingest_document"
+              required_scopes: ["rag:ingest:write"]
+            - tool_type: python
+              component_module: "sam_rag.tools"
+              function_name: "search_documents"
+              required_scopes: ["rag:search:read"]
+
+          session_service:
+            type: "sql"
+            database_url: "${RAG_AGENT_DATABASE_URL, sqlite:///rag_agent.db}"
+            default_behavior: "PERSISTENT"
+
+          artifact_service:
+            type: "s3"
+            bucket_name: "${S3_BUCKET_NAME}"
+            endpoint_url: "${S3_ENDPOINT_URL}"
+
+          enable_builtin_artifact_tools:
+            enabled: true
+
+          agent_card:
+            description: "RAG Agent that can ingest documents and retrieve relevant information based on semantic search queries."
+            defaultInputModes: ["text", "file"]
+            defaultOutputModes: ["text", "file"]
+            skills:
+              - id: "document_ingestion"
+                name: "Document Ingestion"
+                description: "Ingest documents from various sources into the RAG system for semantic search."
+                examples:
+                  - "Please ingest this document about climate change."
+                  - "Add this PDF to the knowledge base."
+              - id: "document_retrieval"
+                name: "Document Retrieval"
+                description: "Search for relevant information in ingested documents using semantic similarity."
+                examples:
+                  - "What information do we have about renewable energy?"
+                  - "Find documents related to machine learning algorithms."
+
+          agent_card_publishing:
+            interval_seconds: 30
+
+          agent_discovery:
+            enabled: true
+
+          inter_agent_communication:
+            allow_list: ["*"]
+            deny_list: []
+            request_timeout_seconds: 60

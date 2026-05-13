@@ -1,0 +1,114 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "sam.fullname" . }}
+  labels:
+    {{- include "sam.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- range .Values.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- if .Values.ingress.autoConfigurePaths }}
+    {{- /* Auto-configured paths mode (recommended) */ -}}
+    {{- $host := .Values.ingress.host }}
+    - {{- if $host }}
+      host: {{ $host | quote }}
+      {{- end }}
+      http:
+        paths:
+          - path: /login
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sam.fullname" . }}
+                port:
+                  name: auth
+          - path: /callback
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sam.fullname" . }}
+                port:
+                  name: auth
+          - path: /is_token_valid
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sam.fullname" . }}
+                port:
+                  name: auth
+          - path: /user_info
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sam.fullname" . }}
+                port:
+                  name: auth
+          - path: /refresh_token
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sam.fullname" . }}
+                port:
+                  name: auth
+          - path: /exchange-code
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sam.fullname" . }}
+                port:
+                  name: auth
+          - path: /api/v1/platform
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sam.fullname" . }}
+                port:
+                  name: platform
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sam.fullname" . }}
+                port:
+                  name: webui
+    {{- else }}
+    {{- /* Manual hosts/paths configuration mode */ -}}
+    {{- range .Values.ingress.hosts }}
+    - {{- if .host }}
+      host: {{ .host | quote }}
+      {{- end }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "sam.fullname" $ }}
+                port:
+                  {{- if .portName }}
+                  name: {{ .portName }}
+                  {{- else }}
+                  name: webui
+                  {{- end }}
+          {{- end }}
+    {{- end }}
+    {{- end }}
+{{- end }}

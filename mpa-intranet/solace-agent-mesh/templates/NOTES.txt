@@ -1,0 +1,278 @@
+SAM (Solace Agent Mesh) has been deployed successfully!
+
+Chart Version: {{ .Chart.Version }}
+Release Name: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+================================================================================
+ACCESSING SAM WEB UI
+================================================================================
+
+{{- if .Values.ingress.enabled }}
+
+Your SAM instance is accessible via Ingress:
+
+{{- /* Determine external host from various sources */ -}}
+{{- $ingressHost := .Values.ingress.host }}
+{{- if not $ingressHost }}
+  {{- range .Values.ingress.hosts }}
+    {{- if .host }}
+      {{- $ingressHost = .host }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- $externalHost := $ingressHost | default .Values.sam.dnsName }}
+{{- if .Values.ingress.annotations }}
+  {{- if hasKey .Values.ingress.annotations "external-dns.alpha.kubernetes.io/hostname" }}
+    {{- $externalHost = index .Values.ingress.annotations "external-dns.alpha.kubernetes.io/hostname" }}
+  {{- end }}
+{{- end }}
+{{- $hasIngressTls := false }}
+{{- if and .Values.ingress.tls (gt (len .Values.ingress.tls) 0) }}
+  {{- $hasIngressTls = true }}
+{{- else if and .Values.ingress.annotations (hasKey .Values.ingress.annotations "alb.ingress.kubernetes.io/certificate-arn") }}
+  {{- $hasIngressTls = true }}
+{{- end }}
+{{- $scheme := ternary "https" "http" $hasIngressTls }}
+{{- if $externalHost }}
+  URL: {{ $scheme }}://{{ $externalHost }}
+{{- else }}
+  URL: <ALB DNS will be assigned - check with: kubectl get ingress {{ include "sam.fullname" . }} -n {{ .Release.Namespace }}>
+{{- end }}
+
+{{- if .Values.ingress.autoConfigurePaths }}
+✓ Path routing: Auto-configured (recommended)
+    /api/v1/platform/* → Platform Service (port 8001)
+    /login, /callback, /is_token_valid, /user_info, /refresh_token, /exchange-code → Auth Service (port 5050)
+    /* → WebUI Service (port 8000)
+{{- else }}
+Path routing: Manual (custom paths from values.yaml)
+{{- /* Validate that platform path is configured */ -}}
+{{- $hasPlatformPath := false }}
+{{- range .Values.ingress.hosts }}
+  {{- range .paths }}
+    {{- if hasPrefix "/api/v1/platform" .path }}
+      {{- $hasPlatformPath = true }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- if not $hasPlatformPath }}
+
+  ⚠️  WARNING: Platform service path (/api/v1/platform) not found in ingress configuration!
+      Platform APIs will not be accessible.
+
+      Either:
+      1. Set ingress.autoConfigurePaths: true (recommended)
+      2. Add the following path to ingress.hosts[].paths (before the catch-all / path):
+
+         - path: /api/v1/platform
+           pathType: Prefix
+           portName: platform
+{{- end }}
+{{- end }}
+
+{{- if $hasIngressTls }}
+TLS is enabled via Ingress/ALB certificate.
+{{- else }}
+NOTE: Configure TLS for production use via ingress.tls in values.yaml
+{{- end }}
+
+{{- else if eq .Values.service.type "LoadBalancer" }}
+
+Your SAM instance is being exposed via LoadBalancer.
+
+Get the external IP address:
+
+  kubectl get svc {{ include "sam.fullname" . }} -n {{ .Release.Namespace }} -w
+
+Once the EXTERNAL-IP is assigned, access SAM at:
+
+{{- if .Values.service.tls.enabled }}
+  Web UI:       https://<EXTERNAL-IP>
+  Platform API: https://<EXTERNAL-IP>:4443
+  Auth:         https://<EXTERNAL-IP>:5050
+{{- else }}
+  Web UI:       http://<EXTERNAL-IP>
+  Platform API: http://<EXTERNAL-IP>:8080
+  Auth:         http://<EXTERNAL-IP>:5050
+{{- end }}
+
+{{- else if eq .Values.service.type "NodePort" }}
+
+Your SAM instance is exposed via NodePort.
+
+Get the Node IP and assigned ports:
+
+  NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' || \
+            kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+
+  NODE_PORT_HTTPS=$(kubectl get svc {{ include "sam.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[?(@.name=="webui-tls")].nodePort}')
+  NODE_PORT_HTTP=$(kubectl get svc {{ include "sam.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[?(@.name=="webui")].nodePort}')
+  NODE_PORT_AUTH=$(kubectl get svc {{ include "sam.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[?(@.name=="auth")].nodePort}')
+
+Access SAM at:
+
+{{- if .Values.service.tls.enabled }}
+  Web UI:  https://$NODE_IP:$NODE_PORT_HTTPS
+  Auth:    https://$NODE_IP:$NODE_PORT_AUTH
+{{- else }}
+  Web UI:  http://$NODE_IP:$NODE_PORT_HTTP
+  Auth:    http://$NODE_IP:$NODE_PORT_AUTH
+{{- end }}
+
+{{- else }}
+
+Your SAM instance is using ClusterIP (internal only).
+
+To access SAM locally, use port-forward:
+
+{{- if .Values.service.tls.enabled }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sam.fullname" . }} 8443:443 4443:4443
+
+  Then access SAM at: https://localhost:8443
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sam.fullname" . }} 8000:80 8080:8080
+
+  Then access SAM at: http://localhost:8000
+{{- end }}
+
+For production use, consider enabling Ingress:
+  helm upgrade {{ .Release.Name }} . --set ingress.enabled=true --set ingress.hosts[0].host=sam.example.com
+
+{{- end }}
+
+================================================================================
+CONFIGURATION
+================================================================================
+
+Namespace ID: {{ .Values.global.persistence.namespaceId }}
+{{- if or (eq .Values.global.persistence.namespaceId "solace-agent-mesh") (eq .Values.global.persistence.namespaceId "") }}
+
+⚠️  NOTE: global.persistence.namespaceId is set to the default value "{{ .Values.global.persistence.namespaceId }}".
+    If multiple SAM deployments share the same broker, each must use a unique namespace ID
+    to avoid topic collisions.
+{{- end }}
+
+Service Type: {{ .Values.service.type }}
+{{- if .Values.service.tls.enabled }}
+Service TLS: Yes
+{{- if and (not .Values.ingress.enabled) (not .Values.service.tls.existingSecret) (not .Values.service.tls.cert) }}
+
+⚠️  WARNING: TLS is enabled but no certificate provided!
+    The pod will fail to start without a valid TLS certificate.
+
+    Either:
+    1. Set service.tls.existingSecret to reference an existing Kubernetes TLS secret
+    2. Provide certificates via --set-file:
+       --set-file service.tls.cert=/path/to/tls.crt --set-file service.tls.key=/path/to/tls.key
+
+    See: https://github.com/SolaceProducts/solace-agent-mesh-helm-quickstart/docs/network-configuration
+{{- end }}
+{{- else }}
+Service TLS: No
+{{- end }}
+{{- if and .Values.sam.oauthProvider .Values.sam.oauthProvider.oidc .Values.sam.oauthProvider.oidc.issuer (ne .Values.sam.oauthProvider.oidc.issuer "") }}
+OAuth2/OIDC: Enabled
+{{- else }}
+OAuth2/OIDC: Disabled
+{{- end }}
+
+================================================================================
+MONITORING
+================================================================================
+
+Check pod status:
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+View logs:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -f
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+1. Verify services are running:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+  All pods should show STATUS=Running and READY with all containers.
+
+2. Health check verification:
+{{- if .Values.ingress.enabled }}
+{{- $tsHost := .Values.ingress.host }}
+{{- if not $tsHost }}
+  {{- range .Values.ingress.hosts }}
+    {{- if .host }}
+      {{- $tsHost = .host }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- $tsHost = $tsHost | default .Values.sam.dnsName }}
+{{- if .Values.ingress.annotations }}
+  {{- if hasKey .Values.ingress.annotations "external-dns.alpha.kubernetes.io/hostname" }}
+    {{- $tsHost = index .Values.ingress.annotations "external-dns.alpha.kubernetes.io/hostname" }}
+  {{- end }}
+{{- end }}
+{{- $tsTls := false }}
+{{- if and .Values.ingress.tls (gt (len .Values.ingress.tls) 0) }}
+  {{- $tsTls = true }}
+{{- else if and .Values.ingress.annotations (hasKey .Values.ingress.annotations "alb.ingress.kubernetes.io/certificate-arn") }}
+  {{- $tsTls = true }}
+{{- end }}
+{{- $tsScheme := ternary "https" "http" $tsTls }}
+
+  curl -s {{ $tsScheme }}://{{ $tsHost }}/health
+  curl -s {{ $tsScheme }}://{{ $tsHost }}/api/v1/platform/health
+{{- else if eq .Values.service.type "ClusterIP" }}
+{{- if .Values.service.tls.enabled }}
+
+  # After running: kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sam.fullname" . }} 8443:443 4443:4443
+  curl -sk https://localhost:8443/health
+  curl -sk https://localhost:4443/api/v1/platform/health
+{{- else }}
+
+  # After running: kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sam.fullname" . }} 8000:80 8080:8080
+  curl -s http://localhost:8000/health
+  curl -s http://localhost:8080/api/v1/platform/health
+{{- end }}
+{{- else }}
+
+  curl -s http://<EXTERNAL-IP>/health
+  curl -s http://<EXTERNAL-IP>:8080/api/v1/platform/health
+{{- end }}
+
+3. CORS / Browser connectivity issues:
+
+  If the Web UI loads but shows errors, or browser console shows CORS errors:
+
+  a) Inspect configured URLs from the K8s secret:
+
+     kubectl get secret {{ include "sam.fullname" . }}-env -n {{ .Release.Namespace }} \
+       -o jsonpath='{.data.FRONTEND_SERVER_URL}' | base64 -d && echo
+     kubectl get secret {{ include "sam.fullname" . }}-env -n {{ .Release.Namespace }} \
+       -o jsonpath='{.data.PLATFORM_SERVICE_URL}' | base64 -d && echo
+
+  b) Verify your browser URL matches FRONTEND_SERVER_URL exactly (including port).
+
+  c) For ClusterIP setups, ensure both WebUI and Platform ports are forwarded:
+
+     kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "sam.fullname" . }} 8000:80 8080:8080
+
+  d) Check browser console (F12 → Console tab) for specific error messages.
+
+4. Common issues:
+
+  - Port mismatch: Browser URL port must match FRONTEND_SERVER_URL exactly
+  - Missing port-forward: Both WebUI (80) and Platform (8080) ports are needed
+  - Pod not ready: Check logs with:
+      kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+================================================================================
+DOCUMENTATION
+================================================================================
+
+For more information, visit:
+  https://github.com/SolaceProducts/solace-agent-mesh-helm-quickstart
+
+For SAM documentation:
+  https://docs.solace.com/Agentic-AI/agent-mesh.htm

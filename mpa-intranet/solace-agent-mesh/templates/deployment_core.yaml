@@ -1,0 +1,284 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sam.fullname" . }}-core
+  labels:
+    {{- include "sam.labels" . | nindent 4 }}
+    app.kubernetes.io/component: core
+  {{- include "sam.annotations" . | nindent 2 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sam.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: core
+  strategy:
+    {{- if eq .Values.samDeployment.rollout.strategy "RollingUpdate" }}
+    {{- with .Values.samDeployment.rollout.rollingUpdate }}
+    rollingUpdate:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- end }}
+    type: {{ .Values.samDeployment.rollout.strategy }}
+  template:
+    metadata:
+      annotations:
+        {{- include "sam.podAnnotations" . | nindent 8 }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap_sam_config_files.yaml") . | sha256sum }}
+        checksum/env: {{ include (print $.Template.BasePath "/secret_sam_env.yaml") . | sha256sum }}
+        checksum/loggingConfig: {{ include (print $.Template.BasePath "/logging-configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "sam.selectorLabels" . | nindent 8 }}
+        {{- include "sam.podLabels" . | nindent 8 }}
+        app.kubernetes.io/component: core
+        {{- if and (eq (include "sam.objectStorage.type" .) "azure") .Values.dataStores.objectStorage.workloadIdentity.enabled }}
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      serviceAccountName: {{ .Values.samDeployment.serviceAccount.name }}
+      {{- if .Values.samDeployment.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.samDeployment.podSecurityContext | nindent 8 }}
+      {{- end }}
+      initContainers:
+      {{-  if .Values.global.persistence.enabled }}
+        - name: s3-init
+          image: "{{- if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}chrislusf/seaweedfs:3.97"
+          envFrom:
+            - secretRef:
+                name: {{ include "seaweedfs.secretName" (index .Subcharts "persistence-layer") }}
+            - secretRef:
+                name: {{ include "sam.fullname" . }}-init-credentials
+          # Inject specific keys from existing secrets (extraSecretEnvironmentVars)
+          {{- if .Values.extraSecretEnvironmentVars }}
+          env:
+          {{- include "sam.extraSecretEnvironmentVars" .Values | nindent 12 }}
+          {{- end }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for SeaweedFS master to be ready..."
+              until wget --timeout=3 --tries=1 --spider -qO- $SEAWEEDFS_MASTER_ENDPOINT_STATUS_URL >/dev/null; do
+                echo "Master not ready yet..."
+                sleep 5
+              done
+
+              echo -e "SeaweedFS master is ready.\n"
+
+              echo "Waiting for SeaweedFS S3 API to be ready..."
+              until wget --timeout=3 --tries=1 --spider -qO- $SEAWEEDFS_S3_ENDPOINT_STATUS_URL >/dev/null; do
+                echo "S3 API not ready yet..."
+                sleep 5
+              done
+
+              echo -e "SeaweedFS S3 API is ready.\n"
+
+              echo "Configuring SeaweedFS S3 credentials and buckets..."
+              echo "s3.bucket.create -name=$S3_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT || exit 1
+              echo "s3.bucket.create -name=$CONNECTOR_SPEC_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT || exit 1
+              echo "s3.configure -apply -access_key=$S3_ACCESS_KEY -secret_key=$S3_SECRET_KEY -user=$S3_ACCESS_KEY -actions=Read,Write,List -buckets=$S3_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT > /dev/null || exit 1
+              echo "s3.configure -apply -access_key=$S3_ACCESS_KEY -secret_key=$S3_SECRET_KEY -user=$S3_ACCESS_KEY -actions=Read,Write,List,Tagging,Admin -buckets=$CONNECTOR_SPEC_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT > /dev/null || exit 1
+              echo "s3.configure -apply -user=anonymous -actions=Read,List -buckets=$CONNECTOR_SPEC_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT > /dev/null || exit 1
+
+              echo "SeaweedFS S3 setup completed successfully!"
+      {{- end }}
+        - name: db-init
+          image: "{{- if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}postgres:18.0-trixie"
+          envFrom:
+          {{ if .Values.global.persistence.enabled }}
+            - secretRef:
+                name: {{ include "postgresql.secretName" (index .Subcharts "persistence-layer") }}
+          {{- else }}
+            - secretRef:
+                name: {{ include "sam.fullname" . }}-postgresql
+          {{- end }}
+            - secretRef:
+                name: {{ include "sam.fullname" . }}-init-credentials
+          # Inject specific keys from existing secrets (extraSecretEnvironmentVars)
+          {{- if .Values.extraSecretEnvironmentVars }}
+          env:
+          {{- include "sam.extraSecretEnvironmentVars" .Values | nindent 12 }}
+          {{- end }}
+          command:
+            - "sh"
+            - "-c"
+            - |
+              until pg_isready; do
+                echo "Waiting for postgres..."
+                sleep 5
+              done
+              # Create users
+              psql -c "CREATE USER \"$ORCHESTRATOR_DATABASE_USER\" WITH LOGIN PASSWORD '$ORCHESTRATOR_DATABASE_PASSWORD';" || true
+              psql -c "CREATE USER \"$WEB_UI_GATEWAY_DATABASE_USER\" WITH LOGIN PASSWORD '$WEB_UI_GATEWAY_DATABASE_PASSWORD';" || true
+              psql -c "CREATE USER \"$PLATFORM_DATABASE_USER\" WITH LOGIN PASSWORD '$PLATFORM_DATABASE_PASSWORD';" || true
+
+              # Create databases
+              psql -c "CREATE DATABASE \"$ORCHESTRATOR_DATABASE_NAME\";" || true
+              psql -c "CREATE DATABASE \"$WEB_UI_GATEWAY_DATABASE_NAME\";" || true
+              psql -c "CREATE DATABASE \"$PLATFORM_DATABASE_NAME\";" || true
+
+              # Grant database-level privileges
+              psql -c "GRANT ALL PRIVILEGES ON DATABASE \"$ORCHESTRATOR_DATABASE_NAME\" TO \"$ORCHESTRATOR_DATABASE_USER\";" || true
+              psql -c "GRANT ALL PRIVILEGES ON DATABASE \"$WEB_UI_GATEWAY_DATABASE_NAME\" TO \"$WEB_UI_GATEWAY_DATABASE_USER\";" || true
+              psql -c "GRANT ALL PRIVILEGES ON DATABASE \"$PLATFORM_DATABASE_NAME\" TO \"$PLATFORM_DATABASE_USER\";" || true
+
+              # Grant schema-level privileges - ORCHESTRATOR
+              psql -d "$ORCHESTRATOR_DATABASE_NAME" -c "GRANT USAGE ON SCHEMA public TO \"$ORCHESTRATOR_DATABASE_USER\";" || true
+              psql -d "$ORCHESTRATOR_DATABASE_NAME" -c "GRANT CREATE ON SCHEMA public TO \"$ORCHESTRATOR_DATABASE_USER\";" || true
+              psql -d "$ORCHESTRATOR_DATABASE_NAME" -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO \"$ORCHESTRATOR_DATABASE_USER\";" || true
+              psql -d "$ORCHESTRATOR_DATABASE_NAME" -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO \"$ORCHESTRATOR_DATABASE_USER\";" || true
+              psql -d "$ORCHESTRATOR_DATABASE_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO \"$ORCHESTRATOR_DATABASE_USER\";" || true
+              psql -d "$ORCHESTRATOR_DATABASE_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO \"$ORCHESTRATOR_DATABASE_USER\";" || true
+
+              # Grant schema-level privileges - WEB_UI_GATEWAY
+              psql -d "$WEB_UI_GATEWAY_DATABASE_NAME" -c "GRANT USAGE ON SCHEMA public TO \"$WEB_UI_GATEWAY_DATABASE_USER\";" || true
+              psql -d "$WEB_UI_GATEWAY_DATABASE_NAME" -c "GRANT CREATE ON SCHEMA public TO \"$WEB_UI_GATEWAY_DATABASE_USER\";" || true
+              psql -d "$WEB_UI_GATEWAY_DATABASE_NAME" -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO \"$WEB_UI_GATEWAY_DATABASE_USER\";" || true
+              psql -d "$WEB_UI_GATEWAY_DATABASE_NAME" -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO \"$WEB_UI_GATEWAY_DATABASE_USER\";" || true
+              psql -d "$WEB_UI_GATEWAY_DATABASE_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO \"$WEB_UI_GATEWAY_DATABASE_USER\";" || true
+              psql -d "$WEB_UI_GATEWAY_DATABASE_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO \"$WEB_UI_GATEWAY_DATABASE_USER\";" || true
+
+              # Grant schema-level privileges - PLATFORM
+              psql -d "$PLATFORM_DATABASE_NAME" -c "GRANT USAGE ON SCHEMA public TO \"$PLATFORM_DATABASE_USER\";" || true
+              psql -d "$PLATFORM_DATABASE_NAME" -c "GRANT CREATE ON SCHEMA public TO \"$PLATFORM_DATABASE_USER\";" || true
+              psql -d "$PLATFORM_DATABASE_NAME" -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO \"$PLATFORM_DATABASE_USER\";" || true
+              psql -d "$PLATFORM_DATABASE_NAME" -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO \"$PLATFORM_DATABASE_USER\";" || true
+              psql -d "$PLATFORM_DATABASE_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO \"$PLATFORM_DATABASE_USER\";" || true
+              psql -d "$PLATFORM_DATABASE_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO \"$PLATFORM_DATABASE_USER\";" || true
+      containers:
+        - name: sam-core
+          ports:
+            - name: orchestrator
+              containerPort: 5002
+            - name: webui-tls
+              containerPort: 8443
+            - name: webui
+              containerPort: 8000
+            - name: platform
+              containerPort: 8001
+            - name: platform-tls
+              containerPort: 4443
+            - name: auth
+              containerPort: 5050
+            - name: health
+              containerPort: 8088
+          env:
+            - name: LOGGING_CONFIG_PATH
+              value: /app/config/logging/logging_config.yaml
+          {{- if .Values.extraSecretEnvironmentVars }}
+          {{- include "sam.extraSecretEnvironmentVars" .Values | nindent 12 }}
+          {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "sam.fullname" . }}-environment
+            - secretRef:
+                name: {{ include "sam.fullname" . }}-persistence
+          command:
+            - solace-agent-mesh
+            - run
+            - --system-env
+            - /app/config/a2a_orchestrator.yaml
+            - /app/config/webui_backend.yaml
+            - /app/config/platform.yaml
+            {{- if not .Values.sam.communityMode }}
+            - /app/config/enterprise_config.yaml
+            - /app/config/auth/oauth2_server.yaml
+            {{- end }}
+          securityContext:
+            {{- with .Values.samDeployment.securityContext }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+          image: "{{ .Values.samDeployment.image.repository }}:{{ .Values.samDeployment.image.tag }}"
+          imagePullPolicy: {{ .Values.samDeployment.image.pullPolicy }}
+          {{- if .Values.samDeployment.resources }}
+          resources:
+            {{- toYaml .Values.samDeployment.resources.sam | nindent 12 }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /startup
+              port: 8088
+            initialDelaySeconds: 25
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8088
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8088
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: shared-storage
+              mountPath: /tmp/solace-agent-mesh
+            - name: config-volume
+              mountPath: /app/config
+              readOnly: true
+            - name: tls-certs
+              mountPath: /app/certs
+              readOnly: true
+            - name: logging-config-volume
+              mountPath: /app/config/logging
+              readOnly: true
+      {{- with .Values.samDeployment.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.samDeployment.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: shared-storage
+          emptyDir: {}
+        - name: tls-certs
+          secret:
+            secretName: {{ .Values.service.tls.existingSecret | default (printf "%s-tls" (include "sam.fullname" $)) }}
+            optional: {{ not .Values.service.tls.enabled }}
+        - name: logging-config-volume
+          configMap:
+            name: {{ include "sam.fullname" $ }}-logging-config
+        - name: config-volume
+          projected:
+            sources:
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-shared-config
+              {{- if not .Values.sam.communityMode }}
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-oauth2-server-config
+                  items:
+                    - key: oauth2_server.yaml
+                      path: auth/oauth2_server.yaml
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-oauth2-config
+                  items:
+                    - key: oauth2_config.yaml
+                      path: auth/oauth2_config.yaml
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-enterprise-config
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-role-definitions
+                  items:
+                    - key: role-to-scope-definitions.yaml
+                      path: auth/role-to-scope-definitions.yaml
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-user-roles
+                  items:
+                    - key: user-to-role-assignments.yaml
+                      path: auth/user-to-role-assignments.yaml
+              {{- end }}
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-orchestrator-config
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-webui-config
+              - configMap:
+                  name: {{ include "sam.fullname" $ }}-platform-config

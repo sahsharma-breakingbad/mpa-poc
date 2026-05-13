@@ -1,0 +1,15 @@
+apiVersion: v2
+name: solace-agent-mesh
+description: A Helm chart for Solace Agent Mesh deployments in Kubernetes
+type: application
+version: 1.2.4
+maintainers:
+  - name: Solace
+    email: info@solace.com
+home: https://solace.com/products/agent-mesh/
+
+dependencies:
+  - name: persistence-layer
+    version: 1.7.1
+    repository: "file:./charts"
+    condition: global.persistence.enabled

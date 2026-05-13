@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "sam.fullname" . }}-rolebinding-sam
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.samDeployment.serviceAccount.name }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "sam.fullname" . }}-role-sam
+  apiGroup: rbac.authorization.k8s.io

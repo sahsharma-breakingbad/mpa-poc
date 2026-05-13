@@ -1,0 +1,25 @@
+# =============================================================================
+# Vessel Screening Agent - Deployer Mode
+# =============================================================================
+# Deploy with:
+#   helm install vessel-screening-agent ./solace-agent-mesh-agent \
+#     -f vessel-screening-agent-values.yaml \
+#     --set-file config.yaml=Vessel_Screening_Agent.yaml
+
+id: "vessel-screening-agent"
+
+global:
+  persistence:
+    namespaceId: "solace-agent-mesh-local"
+
+solaceBroker:
+  url: "ws://sam-broker-pubsubplus-dev.default.svc.cluster.local:8008"
+  username: "default"
+  password: "default"
+  vpn: "default"
+  useTemporaryQueues: true
+
+llmService:
+  endpoint: "https://lite-llm.mymaas.net/"
+  generalModelName: "openai/claude-opus-4-6"
+  apiKey: "sk-Qkg2jZVTqQ64-5MKmwfe2Q"

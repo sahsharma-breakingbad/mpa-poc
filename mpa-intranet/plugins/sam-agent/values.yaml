@@ -1,0 +1,142 @@
+replicaCount: 1
+
+# Deployment mode: "deployer" or "standalone"
+# - deployer: Deployed by agent-deployer (auto-discovers persistence secrets)
+# - standalone: Direct deployment (requires explicit persistence configuration)
+deploymentMode: "deployer"
+
+global:
+  # Optional: Override the default image registry for all images
+  # Uncomment to use internal GCR registry (requires imagePullSecret)
+  # imageRegistry: gcr.io/gcp-maas-prod
+
+  persistence:
+    namespaceId: "solace-agent-mesh"
+
+# Component: "agent" (default) or "gateway"
+component: "agent"
+
+# Component type (only used when component is "gateway")
+# Examples: "rest", "slack", "teams", "event_mesh"
+componentType: ""
+
+# Component identifier (required)
+# Use 'id' for new deployments. 'agentId' is supported for backward compatibility.
+id: ""
+agentId: ""  # Deprecated: use 'id' instead
+
+config:
+  # Component configuration YAML (required)
+  # Provide the configuration as a raw YAML string
+  #
+  # When deploymentMode=deployer: agent-deployer provides this automatically
+  # When deploymentMode=standalone: you must provide this via:
+  #   --set-file config.yaml=/path/to/config.yaml
+  #
+  # 'agentYaml' is supported for backward compatibility
+  yaml: ""
+  agentYaml: ""  # Deprecated: use 'yaml' instead
+serviceAccount:
+  name: solace-agent-mesh-sa
+image:
+  repository: solace/solace-agent-mesh
+  tag: latest
+  pullPolicy: Always
+
+rollout:
+  rollingUpdate: {}
+  strategy: Recreate
+
+podSecurityContext:
+securityContext:
+nodeSelector: {}
+tolerations: []
+annotations: {}
+podAnnotations: {}
+podLabels: {}
+
+files: []
+
+# Solace Broker Configuration
+solaceBroker:
+  url: "ws://localhost:8080"
+  username: "default"
+  password: "default"
+  vpn: "default"
+  useTemporaryQueues: true
+
+# LLM Service Configuration (required)
+llmService:
+  generalModelName: ""
+  endpoint: ""
+  apiKey: ""
+
+# Additional custom environment variables
+environmentVariables: {}
+# CUSTOM_VAR: "custom_value"
+
+datadog:
+  tags:
+
+service:
+  type: LoadBalancer
+  port: 5001
+  annotations: {}
+  dns:
+    enabled: false
+    hostname: ""
+    ttl: "300"
+
+resources:
+  sam:
+    requests:
+      cpu: 1000m
+      memory: 1024Mi
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+
+# Persistence configuration for standalone mode
+# When deploymentMode=standalone, you must provide either:
+# 1. Existing secret names (recommended for security)
+# 2. Direct credentials (database and s3 sections)
+persistence:
+  # Use existing Kubernetes secrets (created separately)
+  # This is the recommended approach for production
+  existingSecrets:
+    database: "" # Name of secret containing DATABASE_URL
+    s3: "" # Name of secret containing S3_ENDPOINT_URL, S3_BUCKET_NAME, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+
+  # Direct database configuration (alternative to existingSecrets.database)
+  # Only used if existingSecrets.database is empty
+  database:
+    # Full connection URL (postgresql+psycopg2://user:pass@host:port/dbname)
+    url: ""
+    # OR individual components (if url is empty)
+    protocol: "postgresql+psycopg2"
+    host: ""
+    port: "5432"
+    username: ""
+    password: ""
+    database: ""
+
+  # Direct S3 configuration (alternative to existingSecrets.s3)
+  # Only used if existingSecrets.s3 is empty
+  s3:
+    endpointUrl: ""
+    bucketName: ""
+    accessKey: ""
+    secretKey: ""
+    region: "us-east-1"
+
+# Custom CA Bundle for trusting private Certificate Authorities
+# Use this when agents need to connect to services using certificates
+# signed by a private/internal CA
+caBundle:
+  enabled: false
+  # Option 1: Provide the CA certificate directly
+  # Use --set-file caBundle.cert=./ca-cert.pem
+  cert: ""
+  # Option 2: Use an existing Kubernetes secret (key must be "ca.crt")
+  # e.g., kubectl create secret generic my-ca-bundle --from-file=ca.crt=./ca-cert.pem
+  existingSecret: ""

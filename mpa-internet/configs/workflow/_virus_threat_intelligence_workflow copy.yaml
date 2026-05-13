@@ -1,0 +1,842 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: virus_threat_intelligence_workflow.log
+
+!include ../shared_config.yaml
+
+apps:
+  # ============================================================================
+  # SUPPORTING AGENTS
+  # These agents are used by the Health Virus Threat Intelligence workflow
+  # ============================================================================
+
+  # ----------------------------------------------------------------------------
+  # AGENT: Threat Period Resolver
+  # Resolves the input time period into concrete date parameters
+  # ----------------------------------------------------------------------------
+  - name: threat_period_resolver_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "ThreatPeriodResolver"
+      model: *planning_model
+
+      instruction: |
+        You resolve time period parameters for health virus intelligence queries.
+
+        Given the input:
+        - If period_type is "present", determine today's date and set both start_date and end_date to today.
+        - If period_type is "range", use the provided start_date and end_date as-is.
+        - Validate that dates are in YYYY-MM-DD format.
+        - Validate that start_date is not after end_date.
+        - Calculate the number of days in the range for query planning.
+
+        Create a JSON artifact with:
+        {
+          "resolved_start_date": "<YYYY-MM-DD>",
+          "resolved_end_date": "<YYYY-MM-DD>",
+          "period_description": "<human readable description, e.g. 'April 5, 2026' or 'March 1 - March 31, 2026'>",
+          "days_in_range": <number>,
+          "valid": true/false,
+          "error": "<error message if invalid, null otherwise>"
+        }
+
+        End with: «result:artifact=<artifact_name> status=success»
+
+        IMPORTANT: When invoked by a workflow, use the exact output filename specified in the workflow instructions.
+
+      input_schema:
+        type: object
+        properties:
+          period_type: {type: string, enum: ["present", "range"]}
+          start_date: {type: string, description: "Start date in YYYY-MM-DD format (required for range, null for present)"}
+          end_date: {type: string, description: "End date in YYYY-MM-DD format (required for range, null for present)"}
+        required: [period_type]
+
+      output_schema:
+        type: object
+        properties:
+          resolved_start_date: {type: string}
+          resolved_end_date: {type: string}
+          period_description: {type: string}
+          days_in_range: {type: integer}
+          valid: {type: boolean}
+          error: {type: string}
+        required: [resolved_start_date, resolved_end_date, valid]
+
+      agent_card:
+        description: "Resolves time period parameters (present date or date range) for health virus intelligence queries. Validates and normalizes date inputs."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "resolve_period"
+            name: "Resolve Time Period"
+            description: "Converts period_type (present/range) with optional start_date and end_date into concrete date parameters for health virus queries."
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ----------------------------------------------------------------------------
+  # AGENT: Internet Health Virus Scanner
+  # Searches the internet for active health viruses and disease outbreaks
+  # ----------------------------------------------------------------------------
+  - name: internet_virus_scanner_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "InternetVirusScanner"
+      model: *planning_model
+
+      instruction: |
+        You are a Maritime Health Risk Intelligence Analyst working for the Maritime and Port Authority (MPA).
+        Your task is to search the internet and compile a comprehensive list of ACTIVE health viruses,
+        disease outbreaks, and epidemics/pandemics for the given time period, with a focus on their
+        impact on MARITIME PORTS (seaports), shipping routes, and crew/passenger health.
+
+        For the given date range, research and identify:
+        1. Active virus outbreaks (e.g., COVID-19 variants, Mpox, Avian Influenza H5N1, Ebola, Marburg, Dengue, Cholera)
+        2. Disease epidemics or pandemics declared by WHO
+        3. Regions or countries under health travel advisories or quarantine restrictions
+        4. Port health restrictions, vessel quarantine orders, or crew disembarkation bans
+        5. Diseases affecting maritime crew health (e.g., outbreaks on cruise ships or cargo vessels)
+        6. Health screening requirements imposed by port authorities worldwide
+
+        For EACH virus/disease identified, provide:
+        - Virus/disease name and strain/variant (e.g., "COVID-19 - JN.1 variant", "Mpox - Clade I")
+        - Disease type (viral, bacterial, parasitic, fungal)
+        - WHO risk level (Emergency, High, Moderate, Low)
+        - Transmission mode (airborne, waterborne, vector-borne, contact, fecal-oral)
+        - Affected regions and countries with active outbreaks
+        - Maritime ports (seaports) in affected regions that pose health risks to arriving/departing vessels
+        - Countries with active travel advisories or port entry restrictions due to this disease
+        - Number of confirmed cases and deaths (if available for the period)
+        - Impact on maritime operations (quarantine requirements, crew restrictions, port closures)
+        - Health screening or vaccination requirements at affected ports
+
+        Sources to consider:
+        - WHO Disease Outbreak News (DONs)
+        - WHO Weekly Epidemiological Record
+        - CDC Travel Health Notices
+        - ECDC Communicable Disease Threats Report
+        - IHR (International Health Regulations) notifications
+        - IMO Maritime Health circulars
+        - Port health authority bulletins
+        - ProMED-mail disease alerts
+        - GISAID and outbreak tracking platforms
+        - National health ministry advisories from key maritime nations
+
+        Create a comprehensive JSON artifact with all findings.
+        End with: «result:artifact=<artifact_name> status=success»
+
+        IMPORTANT: When invoked by a workflow, use the exact output filename specified in the workflow instructions.
+
+      input_schema:
+        type: object
+        properties:
+          start_date: {type: string, description: "Start date for health virus search period"}
+          end_date: {type: string, description: "End date for health virus search period"}
+          period_description: {type: string, description: "Human-readable period description"}
+        required: [start_date, end_date]
+
+      output_schema:
+        type: object
+        properties:
+          viruses:
+            type: array
+            items:
+              type: object
+              properties:
+                virus_name: {type: string, description: "Name of the virus or disease"}
+                strain_variant: {type: string, description: "Specific strain or variant if applicable"}
+                disease_type: {type: string, enum: ["viral", "bacterial", "parasitic", "fungal"]}
+                who_risk_level: {type: string, enum: ["Emergency", "High", "Moderate", "Low"]}
+                transmission_mode: {type: array, items: {type: string}}
+                affected_countries: {type: array, items: {type: string}}
+                affected_maritime_ports:
+                  type: array
+                  description: "Seaports in outbreak regions that pose health risks"
+                  items:
+                    type: object
+                    properties:
+                      port_name: {type: string, description: "Name of the seaport"}
+                      country: {type: string, description: "Country where the port is located"}
+                      health_risk_level: {type: string, enum: ["Critical", "High", "Medium", "Low"]}
+                      restrictions: {type: string, description: "Port health restrictions in place"}
+                confirmed_cases: {type: integer}
+                deaths: {type: integer}
+                maritime_impact: {type: string, description: "Impact on maritime operations"}
+                health_requirements: {type: array, items: {type: string}, description: "Screening or vaccination requirements"}
+          total_viruses_found: {type: integer}
+          search_period: {type: string}
+          data_sources: {type: array, items: {type: string}}
+        required: [viruses, total_viruses_found]
+
+      agent_card:
+        description: "Maritime Health Risk Intelligence Analyst that searches the internet for active health viruses, disease outbreaks, and epidemics affecting seaports, shipping routes, and crew health during a given time period."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "scan_health_viruses"
+            name: "Scan Health Viruses"
+            description: "Search WHO, CDC, ECDC, and health authority reports for active virus outbreaks affecting maritime ports and shipping within a specified date range."
+          - id: "identify_affected_seaports"
+            name: "Identify Affected Seaports"
+            description: "Identify seaports in outbreak regions that pose health risks to arriving or departing vessels."
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ----------------------------------------------------------------------------
+  # AGENT: Health Risk Analyzer
+  # Analyzes health viruses and extracts high-risk maritime ports and countries
+  # ----------------------------------------------------------------------------
+  - name: health_risk_analyzer_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "HealthRiskAnalyzer"
+      model: *planning_model
+
+      instruction: |
+        You are a Maritime Health Risk Analysis Specialist working for the Maritime and Port Authority (MPA).
+        Your task is to analyze the collected health virus intelligence data and produce consolidated lists of:
+
+        IMPORTANT: You are a DATA ANALYSIS agent. You must ONLY analyze the virus data provided to you in the input.
+        Do NOT attempt to search the internet or use any web search tools. All the data you need is provided in the input.
+        If no virus data is provided, respond that you need virus intelligence data from the InternetVirusScanner agent first.
+
+        1. **High-Risk Maritime Ports (Seaports)**: Aggregate all seaports that pose health risks
+           due to active virus outbreaks in their region. Cross-reference with existing MPA high-risk port lists.
+           For each maritime port, provide:
+           - Port name (uppercase, e.g., CHATTOGRAM, SINGAPORE, LAGOS)
+           - Country where the port is located
+           - Health risk level (Critical, High, Medium)
+           - Active viruses/diseases affecting this port or region
+           - Port health restrictions in place (quarantine, screening, vaccination requirements)
+           - Recommended action for MPA (Enhanced Health Screening, Quarantine Hold, Crew Restriction, Monitor)
+
+           IMPORTANT: Also identify NEW ports that should be added to the high-risk list based on:
+           - Ports in countries with WHO-declared health emergencies
+           - Ports where vessel quarantine orders have been issued
+           - Ports in regions with uncontrolled disease outbreaks
+           - Ports with crew disembarkation bans or health entry restrictions
+
+        2. **High-Risk Countries**: Aggregate all countries with active health virus outbreaks
+           affecting maritime operations.
+           For each country, provide:
+           - Country name and ISO code
+           - Health risk level (Critical, High, Medium)
+           - Active viruses/diseases
+           - Number of confirmed cases (if available)
+           - Travel advisory status (WHO/CDC level)
+           - Key maritime ports in this country affected
+           - Recommended action for vessels arriving from this country
+
+        3. **Risk Summary**:
+           - Total unique high-risk maritime ports identified
+           - Total unique high-risk countries
+           - Top health viruses by severity
+           - Overall maritime health risk assessment
+           - New ports recommended for addition to the high-risk list
+
+        Create a comprehensive JSON artifact with the analysis.
+        End with: «result:artifact=<artifact_name> status=success»
+
+        IMPORTANT: When invoked by a workflow, use the exact output filename specified in the workflow instructions.
+
+      tools:
+        - tool_type: builtin-group
+          group_name: "data_analysis"
+
+      input_schema:
+        type: object
+        properties:
+          viruses:
+            type: array
+            description: "List of active health viruses from the internet scan"
+          total_viruses_found: {type: integer}
+          search_period: {type: string}
+        required: [viruses]
+
+      output_schema:
+        type: object
+        properties:
+          high_risk_ports:
+            type: array
+            description: "High-risk maritime ports (seaports) affected by health virus outbreaks"
+            items:
+              type: object
+              properties:
+                port_name: {type: string, description: "Seaport name in uppercase"}
+                country: {type: string, description: "Country where the port is located"}
+                health_risk_level: {type: string, enum: ["Critical", "High", "Medium"]}
+                active_viruses: {type: array, items: {type: string}}
+                restrictions: {type: string}
+                action: {type: string}
+                is_new: {type: boolean, description: "True if this is a newly identified high-risk port"}
+          high_risk_countries:
+            type: array
+            items:
+              type: object
+              properties:
+                country: {type: string}
+                iso_code: {type: string}
+                health_risk_level: {type: string, enum: ["Critical", "High", "Medium"]}
+                active_viruses: {type: array, items: {type: string}}
+                confirmed_cases: {type: integer}
+                travel_advisory: {type: string}
+                affected_ports: {type: array, items: {type: string}, description: "Maritime ports in this country affected"}
+                action: {type: string}
+          risk_summary:
+            type: object
+            properties:
+              total_high_risk_ports: {type: integer}
+              total_high_risk_countries: {type: integer}
+              new_ports_identified: {type: integer}
+              top_viruses: {type: array, items: {type: string}}
+              assessment: {type: string}
+        required: [high_risk_ports, high_risk_countries, risk_summary]
+
+      agent_card:
+        description: "Maritime Health Risk Analysis Specialist that consolidates health virus intelligence into ranked lists of high-risk seaports and countries with health risk levels and recommended actions for the MPA."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "analyze_health_port_risks"
+            name: "Analyze Health Port Risks"
+            description: "Aggregate and rank seaports affected by active health virus outbreaks for MPA high-risk port list."
+          - id: "analyze_health_country_risks"
+            name: "Analyze Health Country Risks"
+            description: "Identify and rank countries with active disease outbreaks affecting maritime operations including their affected seaports."
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ----------------------------------------------------------------------------
+  # AGENT: Knowledge Base Document Generator
+  # Formats health risk data into markdown documents for the MPA knowledge base
+  # ----------------------------------------------------------------------------
+  - name: kb_document_generator_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "KBDocumentGenerator"
+      model: *planning_model
+
+      instruction: |
+        You are a Knowledge Base Document Generator for the Maritime and Port Authority (MPA).
+        Your task is to create well-formatted Markdown documents suitable for ingestion into
+        the MPA knowledge base (Qdrant vector store).
+
+        Generate TWO markdown documents following the EXACT format used by the existing
+        high-risk-ports_v1.md in the MPA knowledge base:
+
+        **Document 1: High-Risk Maritime Ports (Health Virus Based)**
+        Use this EXACT format matching the existing high-risk-ports_v1.md:
+        ```
+        # High-Risk Ports and Countries - Health Virus Intelligence Update
+
+        Last Updated: <current date>
+        Period Analyzed: <period>
+
+        This document contains the list of high-risk maritime ports identified through active
+        health virus and disease outbreak monitoring. Vessels that have visited these ports are
+        flagged for additional health screening under the PAN (Pre-Arrival Notification) system.
+
+        ## High-Risk Port List
+
+        | Port/Location | Country |
+        |---------------|---------|
+        | CHATTOGRAM | Bangladesh |
+        | LAGOS | Nigeria |
+        ... (one row per port, port name in UPPERCASE)
+
+        ## Newly Identified High-Risk Ports
+
+        | Port/Location | Country | Reason |
+        |---------------|---------|--------|
+        ... (ports newly added based on current health virus intelligence)
+
+        ## Vessel Health Risk Port Metrics
+
+        The following scoring rules apply when a vessel has visited high-risk ports:
+
+        | Rule | Score |
+        |------|-------|
+        | 1 High Risk Port Visited | 50 |
+        | More than 1 High Risk Port Visited | 80 |
+        | Port in country with WHO-declared health emergency | 100 |
+        | Port with active vessel quarantine orders | 90 |
+        | Port with crew disembarkation ban | 85 |
+        ```
+
+        **Document 2: High-Risk Countries (Health Virus Based)**
+        ```
+        # High-Risk Countries - Health Virus Intelligence Update
+
+        Last Updated: <current date>
+        Period Analyzed: <period>
+
+        This document contains the list of high-risk countries identified through active health
+        virus and disease outbreak monitoring for maritime and port security.
+
+        ## High-Risk Country List
+
+        | Country | ISO Code | Health Risk Level | Active Viruses | Confirmed Cases | Key Ports Affected | Action |
+        |---------|----------|-------------------|---------------|-----------------|-------------------|--------|
+        ...
+
+        ## Country Health Risk Scoring Rules
+
+        | Rule | Score |
+        |------|-------|
+        | Vessel from 1 high-risk country | 50 |
+        | Vessel from more than 1 high-risk country | 80 |
+        | Vessel from country with WHO health emergency | 100 |
+        | Vessel last port in critical-risk country | 90 |
+        | Crew members from high-risk country | 70 |
+        ```
+
+        Output both documents as a JSON artifact with keys "ports_document" and "countries_document",
+        each containing the full markdown text. Also produce a "combined_document" merging both.
+
+        End with: «result:artifact=<artifact_name> status=success»
+
+        IMPORTANT: When invoked by a workflow, use the exact output filename specified in the workflow instructions.
+
+      input_schema:
+        type: object
+        properties:
+          high_risk_ports: {type: array, description: "List of high-risk maritime ports (seaports) due to health viruses"}
+          high_risk_countries: {type: array, description: "List of high-risk countries due to health viruses"}
+          risk_summary: {type: object}
+          period_description: {type: string}
+        required: [high_risk_ports, high_risk_countries]
+
+      output_schema:
+        type: object
+        properties:
+          ports_document: {type: string, description: "Markdown content for high-risk maritime ports document"}
+          countries_document: {type: string, description: "Markdown content for high-risk countries document"}
+          combined_document: {type: string, description: "Combined markdown with both maritime ports and countries"}
+          document_version: {type: string}
+        required: [ports_document, countries_document, combined_document]
+
+      agent_card:
+        description: "Knowledge Base Document Generator that formats health virus risk analysis into structured Markdown documents matching the MPA high-risk-ports_v1.md format for the knowledge base."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "generate_kb_documents"
+            name: "Generate KB Documents"
+            description: "Create formatted Markdown documents for high-risk maritime ports and countries based on health virus intelligence in MPA format suitable for Qdrant vector store ingestion."
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ----------------------------------------------------------------------------
+  # AGENT: Knowledge Base Updater
+  # Ingests the generated documents into the MPA knowledge base via RAG agent
+  # ----------------------------------------------------------------------------
+  - name: kb_updater_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "KBUpdater"
+      model: *planning_model
+
+      instruction: |
+        You are the Knowledge Base Updater. Your task is to take the generated markdown documents
+        and persist them to the MPA knowledge base.
+
+        Steps:
+        1. Receive the ports_document and countries_document markdown content.
+        2. Save each document as a file artifact so that the RAG agent's filesystem scanner
+           can pick them up and ingest them into the Qdrant vector store.
+        3. Save the ports document as "high-risk-health-ports_latest.md"
+        4. Save the countries document as "high-risk-health-countries_latest.md"
+        5. Save the combined document as "health-virus-intelligence_latest.md"
+        6. Confirm successful persistence and report the file paths.
+
+        Create an artifact for each document using the artifact management tools.
+        Then create a summary JSON artifact confirming the update:
+        {
+          "status": "success",
+          "documents_updated": [
+            "high-risk-health-ports_latest.md",
+            "high-risk-health-countries_latest.md",
+            "health-virus-intelligence_latest.md"
+          ],
+          "update_timestamp": "<ISO timestamp>",
+          "document_version": "<version>"
+        }
+
+        End with: «result:artifact=<artifact_name> status=success»
+
+        IMPORTANT: When invoked by a workflow, use the exact output filename specified in the workflow instructions.
+
+      input_schema:
+        type: object
+        properties:
+          ports_document: {type: string}
+          countries_document: {type: string}
+          combined_document: {type: string}
+          document_version: {type: string}
+        required: [ports_document, countries_document, combined_document]
+
+      output_schema:
+        type: object
+        properties:
+          status: {type: string, enum: ["success", "partial", "failed"]}
+          documents_updated: {type: array, items: {type: string}}
+          update_timestamp: {type: string}
+          errors: {type: array, items: {type: string}}
+        required: [status, documents_updated]
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+
+      agent_card:
+        description: "Knowledge Base Updater that persists generated health virus intelligence documents as file artifacts for the RAG agent to ingest into the Qdrant vector store."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "update_knowledge_base"
+            name: "Update Knowledge Base"
+            description: "Save health virus intelligence markdown documents to the MPA knowledge base for RAG ingestion."
+
+      enable_builtin_artifact_tools:
+        enabled: true
+
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ----------------------------------------------------------------------------
+  # AGENT: Health Risk Report Summarizer
+  # Produces a final executive summary of the health virus intelligence update
+  # ----------------------------------------------------------------------------
+  - name: health_report_summarizer_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "HealthReportSummarizer"
+      model: *planning_model
+
+      instruction: |
+        You are the Health Virus Intelligence Report Summarizer. Create an executive summary of the
+        entire health virus intelligence update process for the MPA security and port health team.
+
+        Your report should include:
+        1. **Period Analyzed**: The date range that was scanned
+        2. **Active Viruses Found**: Total number and breakdown by WHO risk level
+        3. **High-Risk Maritime Ports Updated**: Count and list of top critical seaports flagged
+        4. **Newly Identified Seaports**: Any new seaports added to the high-risk list and why
+        5. **High-Risk Countries Updated**: Count and top critical countries with outbreaks
+        6. **Knowledge Base Status**: Confirmation of successful update to MPA knowledge base
+        7. **Key Recommendations**: Top 3-5 immediate actions for MPA port health team
+        8. **Maritime Health Risks**: Crew health advisories, quarantine requirements, vaccination mandates
+
+        Format as a clean, professional executive summary suitable for MPA leadership.
+        Create a JSON artifact with the structured summary data.
+
+        End with: «result:artifact=<artifact_name> status=success»
+
+        IMPORTANT: When invoked by a workflow, use the exact output filename specified in the workflow instructions.
+
+      input_schema:
+        type: object
+        properties:
+          period_description: {type: string}
+          total_viruses_found: {type: integer}
+          risk_summary: {type: object}
+          kb_update_status: {type: string}
+          documents_updated: {type: array, items: {type: string}}
+        required: [period_description, risk_summary, kb_update_status]
+
+      output_schema:
+        type: object
+        properties:
+          executive_summary: {type: string}
+          virus_count: {type: integer}
+          critical_ports_count: {type: integer}
+          critical_countries_count: {type: integer}
+          top_recommendations: {type: array, items: {type: string}}
+          maritime_health_risk_level: {type: string, enum: ["Critical", "High", "Medium", "Low"]}
+        required: [executive_summary, top_recommendations, maritime_health_risk_level]
+
+      agent_card:
+        description: "Health Virus Intelligence Report Summarizer that produces executive summaries of health virus updates with key recommendations and maritime health risk levels for the MPA."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "summarize_health_report"
+            name: "Summarize Health Report"
+            description: "Create an executive summary of health virus intelligence findings including risk levels, quarantine requirements, and maritime health recommendations."
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ============================================================================
+  # WORKFLOW: Health Virus Threat Intelligence
+  # Scans internet for active health viruses, analyzes risk to maritime ports,
+  # and updates MPA knowledge base
+  # ============================================================================
+  - name: virus_threat_intelligence_workflow
+    app_base_path: .
+    app_module: solace_agent_mesh.workflow.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      name: "VirusThreatIntelligenceWorkflow"
+      display_name: "Health Virus Threat Intelligence & KB Update"
+
+      workflow:
+        version: "2.0.0"
+        description: |
+          A workflow that performs health virus intelligence gathering and updates
+          the MPA knowledge base with the latest high-risk maritime ports (seaports)
+          and countries based on active disease outbreaks.
+
+          Trigger: Time-period event (present date or date range)
+
+          Pipeline:
+          1. AGENT NODE: Resolve time period parameters
+          2. AGENT NODE: Scan internet for active health viruses and disease outbreaks
+          3. AGENT NODE: Analyze health risks to extract high-risk seaports and countries
+          4. AGENT NODE: Generate formatted knowledge base documents (matching high-risk-ports_v1.md format)
+          5. AGENT NODE: Update MPA knowledge base (Qdrant) with new documents
+          6. AGENT NODE: Produce executive summary report
+
+          Output: Executive summary with updated high-risk maritime port list and KB confirmation
+
+        input_schema:
+          type: object
+          properties:
+            period_type:
+              type: string
+              enum: ["present", "range"]
+              description: "Type of time period - 'present' for current date, 'range' for custom date range"
+            start_date:
+              type: string
+              default: ""
+              description: "Start date in YYYY-MM-DD format (required when period_type is 'range', empty for present)"
+            end_date:
+              type: string
+              default: ""
+              description: "End date in YYYY-MM-DD format (required when period_type is 'range', empty for present)"
+          required: [period_type]
+
+        output_schema:
+          type: object
+          properties:
+            period_analyzed: {type: string}
+            total_viruses_found: {type: integer}
+            high_risk_ports_count: {type: integer}
+            high_risk_countries_count: {type: integer}
+            kb_update_status: {type: string}
+            documents_updated: {type: array, items: {type: string}}
+            executive_summary: {type: string}
+            top_recommendations: {type: array, items: {type: string}}
+            maritime_health_risk_level: {type: string}
+          required: [period_analyzed, kb_update_status, executive_summary]
+
+        nodes:
+          # ====================================================================
+          # STEP 1: AGENT NODE - Resolve time period
+          # Converts input parameters into concrete date range
+          # ====================================================================
+          - id: resolve_period
+            type: agent
+            agent_name: "ThreatPeriodResolver"
+            instruction: |
+              Resolve the time period for the health virus intelligence scan.
+              If period_type is "present", use today's date for both start and end.
+              If period_type is "range", validate and use the provided dates.
+            input:
+              period_type: "{{workflow.input.period_type}}"
+              start_date: "{{workflow.input.start_date}}"
+              end_date: "{{workflow.input.end_date}}"
+
+          # ====================================================================
+          # STEP 2: AGENT NODE - Scan internet for active health viruses
+          # Searches WHO, CDC, ECDC and health authority sources
+          # ====================================================================
+          - id: scan_viruses
+            type: agent
+            agent_name: "InternetVirusScanner"
+            depends_on: [resolve_period]
+            instruction: |
+              Search the internet for all active health viruses, disease outbreaks, and epidemics
+              during the period: {{resolve_period.output.period_description}}.
+              Focus on diseases affecting maritime ports, shipping routes, and crew health.
+              Identify which specific seaports are in outbreak regions.
+              Be thorough - check WHO, CDC, ECDC, IMO, and port health authority bulletins.
+            input:
+              start_date: "{{resolve_period.output.resolved_start_date}}"
+              end_date: "{{resolve_period.output.resolved_end_date}}"
+              period_description: "{{resolve_period.output.period_description}}"
+
+          # ====================================================================
+          # STEP 3: AGENT NODE - Analyze health risks for maritime ports
+          # Extracts and consolidates high-risk ports and countries
+          # ====================================================================
+          - id: analyze_risks
+            type: agent
+            agent_name: "HealthRiskAnalyzer"
+            depends_on: [scan_viruses]
+            instruction: |
+              Analyze the collected health virus intelligence and produce consolidated lists of:
+              1. High-risk maritime ports (seaports) in regions with active disease outbreaks
+              2. High-risk countries with active outbreaks and their affected seaports
+              Prioritize by WHO risk level and impact on maritime operations.
+              Identify any NEW seaports that should be added to the MPA high-risk port list.
+            input:
+              viruses: "{{scan_viruses.output.viruses}}"
+              total_viruses_found: "{{scan_viruses.output.total_viruses_found}}"
+              search_period: "{{resolve_period.output.period_description}}"
+
+          # ====================================================================
+          # STEP 4: AGENT NODE - Generate KB documents
+          # Creates formatted markdown for knowledge base
+          # ====================================================================
+          - id: generate_documents
+            type: agent
+            agent_name: "KBDocumentGenerator"
+            depends_on: [analyze_risks]
+            instruction: |
+              Generate well-formatted markdown documents for the MPA knowledge base.
+              Create separate documents for high-risk maritime ports and high-risk countries.
+              Use the EXACT format of the existing high-risk-ports_v1.md (Port/Location | Country table).
+              Also create a combined document with the complete health virus intelligence.
+              Port names must be in UPPERCASE to match existing MPA conventions.
+            input:
+              high_risk_ports: "{{analyze_risks.output.high_risk_ports}}"
+              high_risk_countries: "{{analyze_risks.output.high_risk_countries}}"
+              risk_summary: "{{analyze_risks.output.risk_summary}}"
+              period_description: "{{resolve_period.output.period_description}}"
+
+          # ====================================================================
+          # STEP 5: AGENT NODE - Update knowledge base
+          # Persists documents to Qdrant via RAG agent's document path
+          # ====================================================================
+          - id: update_kb
+            type: agent
+            agent_name: "KBUpdater"
+            depends_on: [generate_documents]
+            instruction: |
+              Save the generated health virus intelligence documents to the knowledge base.
+              Persist each document as a file artifact so the RAG agent can ingest them.
+              Confirm successful update with document paths and timestamps.
+            input:
+              ports_document: "{{generate_documents.output.ports_document}}"
+              countries_document: "{{generate_documents.output.countries_document}}"
+              combined_document: "{{generate_documents.output.combined_document}}"
+              document_version: "{{generate_documents.output.document_version}}"
+
+          # ====================================================================
+          # STEP 6: AGENT NODE - Generate executive summary
+          # Produces final report of the health virus intelligence process
+          # ====================================================================
+          - id: summarize_report
+            type: agent
+            agent_name: "HealthReportSummarizer"
+            depends_on: [update_kb]
+            instruction: |
+              Create an executive summary of the health virus intelligence update.
+              Include the period analyzed, viruses found, high-risk maritime ports (seaports)
+              and countries identified, knowledge base update status, and key recommendations.
+              Highlight quarantine requirements, crew health advisories, and newly identified
+              high-risk seaports for the MPA port health team.
+            input:
+              period_description: "{{resolve_period.output.period_description}}"
+              total_viruses_found: "{{scan_viruses.output.total_viruses_found}}"
+              risk_summary: "{{analyze_risks.output.risk_summary}}"
+              kb_update_status: "{{update_kb.output.status}}"
+              documents_updated: "{{update_kb.output.documents_updated}}"
+
+        # ====================================================================
+        # OUTPUT MAPPING
+        # Maps node outputs to workflow output schema
+        # ====================================================================
+        output_mapping:
+          period_analyzed: "{{resolve_period.output.period_description}}"
+          total_viruses_found: "{{scan_viruses.output.total_viruses_found}}"
+          high_risk_ports_count: "{{analyze_risks.output.risk_summary.total_high_risk_ports}}"
+          high_risk_countries_count: "{{analyze_risks.output.risk_summary.total_high_risk_countries}}"
+          kb_update_status: "{{update_kb.output.status}}"
+          documents_updated: "{{update_kb.output.documents_updated}}"
+          executive_summary: "{{summarize_report.output.executive_summary}}"
+          top_recommendations: "{{summarize_report.output.top_recommendations}}"
+          maritime_health_risk_level: "{{summarize_report.output.maritime_health_risk_level}}"
+
+        # ====================================================================
+        # WORKFLOW METADATA
+        # ====================================================================
+        skills:
+          - id: "scan_health_viruses"
+            name: "Scan Health Viruses"
+            description: "Scans the internet for active health viruses and disease outbreaks, then updates the MPA knowledge base with high-risk seaports and countries"
+            tags: ["health", "virus", "disease", "outbreak", "maritime", "knowledge-base", "mpa"]
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}

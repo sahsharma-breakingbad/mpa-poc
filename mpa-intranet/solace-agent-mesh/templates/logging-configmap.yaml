@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" . }}-logging-config
+  labels:
+    {{- include "sam.labels" . | nindent 4 }}
+data:
+  logging_config.yaml: |
+    version: 1
+    disable_existing_loggers: false
+
+    formatters:
+      simpleFormatter:
+        format: "%(asctime)s | %(levelname)-5s | %(threadName)s | %(name)s | %(message)s"
+
+      jsonFormatter:
+        "()": pythonjsonlogger.jsonlogger.JsonFormatter
+        format: "%(timestamp)s %(levelname)s %(threadName)s %(name)s %(funcName)s %(pathname)s %(lineno)d %(module)s %(message)s"
+        timestamp: "timestamp"
+        rename_fields:
+          levelname: level
+          threadName: logger.thread_name
+          name: logger.name
+          funcName: code.funcName
+          pathname: code.filepath
+          lineno: code.lineno
+          module: code.module
+
+    handlers:
+      streamHandler:
+        class: logging.StreamHandler
+        formatter: jsonFormatter
+        stream: ext://sys.stdout
+
+      rotatingFileHandler:
+        class: logging.handlers.RotatingFileHandler
+        formatter: simpleFormatter
+        filename: sam.log
+        mode: a
+        maxBytes: 52428800
+        backupCount: 10
+
+    loggers:
+      solace_ai_connector:
+        level: ${LOGGING_SAC_LEVEL, INFO}
+        handlers: []
+
+      solace_agent_mesh:
+        level: ${LOGGING_SAM_LEVEL, INFO}
+        handlers: []
+
+      solace_agent_mesh_enterprise:
+        level: ${LOGGING_SAM_LEVEL, INFO}
+        handlers: []
+
+      sam_trace:
+        level: ${LOGGING_SAM_TRACE_LEVEL, INFO}
+        handlers: []
+
+    root:
+      level: ${LOGGING_ROOT_LEVEL, WARNING}
+      handlers:
+        - streamHandler
+        - rotatingFileHandler

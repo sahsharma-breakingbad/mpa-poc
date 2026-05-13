@@ -1,0 +1,9 @@
+apiVersion: v2
+description: A Helm chart for deploying Solace Agent Mesh agents and gateways
+home: https://solace.com/products/agent-mesh/
+maintainers:
+- email: info@solace.com
+  name: Solace
+name: sam-agent
+type: application
+version: 1.2.2

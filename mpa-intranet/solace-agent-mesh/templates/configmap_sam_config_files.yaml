@@ -1,0 +1,542 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-shared-config
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  shared_config.yaml: |
+    shared_config:
+      - broker_connection: &broker_connection
+          dev_mode: ${SOLACE_DEV_MODE, false}
+          broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+          broker_username: ${SOLACE_BROKER_USERNAME, default}
+          broker_password: ${SOLACE_BROKER_PASSWORD, default}
+          broker_vpn: ${SOLACE_BROKER_VPN, default}
+          temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+          # Ensure high enough limits if many agents are running
+          # max_connection_retries: -1 # Retry forever
+
+      - models:
+        planning: &planning_model
+          # This dictionary structure tells ADK to use the LiteLlm wrapper.
+          # 'model' uses the specific model identifier your endpoint expects.
+          model: ${LLM_SERVICE_PLANNING_MODEL_NAME} # Use env var for model name
+          # 'api_base' tells LiteLLM where to send the request.
+          api_base: ${LLM_SERVICE_ENDPOINT} # Use env var for endpoint URL
+          # 'api_key' provides authentication.
+          api_key: ${LLM_SERVICE_API_KEY} # Use env var for API key
+
+        general: &general_model
+          # This dictionary structure tells ADK to use the LiteLlm wrapper.
+          # 'model' uses the specific model identifier your endpoint expects.
+          model: ${LLM_SERVICE_GENERAL_MODEL_NAME} # Use env var for model name
+          # 'api_base' tells LiteLLM where to send the request.
+          api_base: ${LLM_SERVICE_ENDPOINT} # Use env var for endpoint URL
+          # 'api_key' provides authentication.
+          api_key: ${LLM_SERVICE_API_KEY} # Use env var for API key
+
+        image_gen: &image_generation_model
+          # This dictionary structure tells ADK to use the LiteLlm wrapper.
+          # 'model' uses the specific model identifier your endpoint expects.
+          model: ${IMAGE_MODEL_NAME} # Use env var for model name
+          # 'api_base' tells LiteLLM where to send the request.
+          api_base: ${IMAGE_SERVICE_ENDPOINT} # Use env var for endpoint URL
+          # 'api_key' provides authentication.
+          api_key: ${IMAGE_SERVICE_API_KEY} # Use env var for API key
+
+        image_describe: &image_description_model
+          # This dictionary structure tells ADK to use the LiteLlm wrapper.
+          # 'model' uses the specific model identifier your endpoint expects.
+          model: ${IMAGE_DESCRIPTION_MODEL_NAME} # Use env var for model name
+          # 'api_base' tells LiteLLM where to send the request.
+          api_base: ${IMAGE_SERVICE_ENDPOINT} # Use env var for endpoint URL
+          # 'api_key' provides authentication.
+          api_key: ${IMAGE_SERVICE_API_KEY} # Use env var for API key
+
+        audio_transcription: &audio_transcription_model
+          # This dictionary structure tells ADK to use the LiteLlm wrapper.
+          # 'model' uses the specific model identifier your endpoint expects.
+          model: ${AUDIO_TRANSCRIPTION_MODEL_NAME} # Use env var for model name
+          # 'api_base' tells LiteLLM where to send the request.
+          api_base: ${AUDIO_TRANSCRIPTION_API_BASE} # Use env var for endpoint URL
+          # 'api_key' provides authentication.
+          api_key: ${AUDIO_TRANSCRIPTION_API_KEY} # Use env var for API key
+
+        report_gen: &report_generation_model
+          # This dictionary structure tells ADK to use the LiteLlm wrapper.
+          # 'model' uses the specific model identifier your endpoint expects.
+          model: ${LLM_REPORT_MODEL_NAME} # Use env var for model name
+          # 'api_base' tells LiteLLM where to send the request.
+          api_base: ${LLM_SERVICE_ENDPOINT} # Use env var for endpoint URL
+          # 'api_key' provides authentication.
+          api_key: ${LLM_SERVICE_API_KEY} # Use env var for API key
+
+        multimodal: &multimodal_model "gemini-2.5-flash-preview-04-17"
+        gemini_pro: &gemini_pro_model "gemini-2.5-pro-exp-03-25"
+
+      # Default data tools configuration
+      - data_tools_config: &default_data_tools_config
+          sqlite_memory_threshold_mb: 100
+          max_result_preview_rows: 50
+          max_result_preview_bytes: 4096
+
+    health_check:
+      enabled: true
+      port: 8088
+      liveness_path: /healthz
+      readiness_path: /readyz
+      startup_path: /startup
+      readiness_check_period_seconds: 6   # How often to check readiness
+      startup_check_period_seconds: 6    # How often to poll for startup completion
+
+{{- if not .Values.sam.communityMode }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-oauth2-server-config
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  oauth2_server.yaml: |
+    log:
+      stdout_log_level: INFO
+      log_file_level: DEBUG
+      log_file: oauth_server.log
+
+    !include ../shared_config.yaml
+
+    shared_config:
+      # OAuth2 service configuration
+      - oauth2_config: &oauth2_config
+          enabled: true
+          config_file: "config/auth/oauth2_config.yaml"
+          host: "0.0.0.0"
+          port: 5050
+          ssl_cert: ${SSL_CERTFILE}
+          ssl_key: ${SSL_KEYFILE}
+          ssl_passphrase: ${SSL_KEYFILE_PASSWORD}
+
+
+    flows:
+      # Initialize OAuth2 service
+      - name: oauth2_service
+        components:
+          - component_name: oauth2_auth_service
+            component_module: src.components.oauth2_component
+            component_config:
+              <<: *oauth2_config
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-oauth2-config
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  oauth2_config.yaml: |
+    ---
+    enabled: ${OAUTH2_ENABLED:true}
+    development_mode: ${OAUTH2_DEV_MODE:false}
+    server:
+      host: ${EXTERNAL_AUTH_HOST:localhost}
+      port: 5050
+      ssl:
+        cert_file: ${SSL_CERTFILE:}
+        key_file: ${SSL_KEYFILE:}
+        ssl_passphrase: ${SSL_KEYFILE_PASSWORD:}
+    providers:
+      oidc:
+        issuer: ${OIDC_ISSUER:https://your-provider.com}
+        client_id: ${OIDC_CLIENT_ID}
+        client_secret: ${OIDC_CLIENT_SECRET}
+        redirect_uri: ${OIDC_REDIRECT_URI:http://localhost:8080/callback}
+        scope: "openid email profile offline_access"
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-orchestrator-config
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  a2a_orchestrator.yaml: |
+    log:
+      stdout_log_level: INFO
+      log_file_level: DEBUG
+      log_file: a2a_orchestrator.log
+
+    !include shared_config.yaml
+
+    apps:
+      - name: custom_llm_agent_app
+        app_base_path: .
+        app_module: solace_agent_mesh.agent.sac.app
+        broker:
+          <<: *broker_connection
+
+        app_config:
+          namespace: ${NAMESPACE}
+          supports_streaming: true
+          agent_name: "OrchestratorAgent"
+          display_name: "Orchestrator"
+
+          model: *planning_model
+
+          instruction: | 
+            You are the Orchestrator Agent within an AI agentic system. Your primary responsibilities are to:
+            1. Process tasks received from external sources via the system Gateway.
+            2. Analyze each task to determine the optimal execution strategy:
+               a. Single Agent Delegation: If the task can be fully addressed by a single peer agent (based on their declared capabilities/description), delegate the task to that agent.
+               b. Multi-Agent Coordination: If task completion requires a coordinated effort from multiple peer agents: first, devise a logical execution plan (detailing the sequence of agent invocations and any necessary data handoffs). Then, manage the execution of this plan, invoking each agent in the defined order.
+               c. Direct Execution: If the task is not suitable for delegation (neither to a single agent nor a multi-agent sequence) and falls within your own capabilities, execute the task yourself.
+
+            Artifact Management Guidelines:
+            - If an artifact was created during the task (either by yourself or a delegated agent), you must use the `list_artifacts` tool to get the details of the created artifacts.
+            - You must then review the list of artifacts and return the ones that are important for the user by using the `signal_artifact_for_return` tool.
+            - Provide regular progress updates using `status_update` embed directives, especially before initiating any tool call.
+
+          inject_system_purpose: true
+          inject_response_format: true
+          inject_user_profile: true
+          artifact_handling_mode: "embed"
+          enable_embed_resolution: true
+          enable_artifact_content_instruction: true
+          data_tools_config: *default_data_tools_config
+          max_llm_calls_per_task: 25
+
+          {{- $storageType := include "sam.objectStorage.type" . }}
+          artifact_service:
+          {{- if eq $storageType "azure" }}
+            type: "azure"
+            container_name: "${AZURE_STORAGE_CONTAINER_NAME}"
+            account_name: "${AZURE_STORAGE_ACCOUNT_NAME}"
+          {{- else if eq $storageType "gcs" }}
+            type: "gcs"
+            bucket_name: "${GCS_BUCKET_NAME}"
+          {{- else }}
+            type: "s3"
+            bucket_name: "${S3_BUCKET_NAME}"
+            endpoint_url: "${S3_ENDPOINT_URL}"
+          {{- end }}
+
+          session_service:
+            type: "${ORCHESTRATOR_SESSION_SERVICE_TYPE}"
+            database_url: "${ORCHESTRATOR_DATABASE_URL}"
+            default_behavior: "PERSISTENT"
+
+          tools:
+            - tool_type: builtin-group
+              group_name: "artifact_management"
+            - tool_type: builtin-group
+              group_name: "data_analysis"
+
+          agent_card:
+            description: "The Orchestrator component. It manages tasks, and coordinating multi-agent workflows."
+            defaultInputModes: ["text"]
+            defaultOutputModes: ["text", "file"]
+            skills: []
+          agent_card_publishing: { interval_seconds: 10 }
+          agent_discovery: { enabled: true }
+          inter_agent_communication:
+            allow_list: ["*"]
+            request_timeout_seconds: 2000
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-webui-config
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  webui_backend.yaml: |
+    log:
+      stdout_log_level: INFO
+      log_file_level: DEBUG
+      log_file: webui_backend.log
+
+    !include shared_config.yaml
+
+    apps:
+      - name: a2a_webui_backend_app
+        app_base_path: .
+        app_module: solace_agent_mesh.gateway.http_sse.app
+
+        broker:
+          <<: *broker_connection
+
+        app_config:
+          namespace: ${NAMESPACE}
+          session_secret_key: ${SESSION_SECRET_KEY, please_change_me_in_production}
+
+          model: *general_model
+
+          gateway_id: ${WEBUI_GATEWAY_ID}
+          fastapi_host: ${FASTAPI_HOST, 127.0.0.1}
+          fastapi_port: ${FASTAPI_PORT, 8000}
+          fastapi_https_port: ${FASTAPI_HTTPS_PORT}
+          ssl_keyfile: ${SSL_KEYFILE}
+          ssl_certfile: ${SSL_CERTFILE}
+          ssl_keyfile_password: ${SSL_KEYFILE_PASSWORD}
+          cors_allowed_origins:
+            - "${FRONTEND_SERVER_URL}"
+            - "http://localhost:3000"
+            - "http://127.0.0.1:3000"
+          cors_allowed_origin_regex: ${CORS_ALLOWED_ORIGIN_REGEX}
+
+          enable_embed_resolution: ${ENABLE_EMBED_RESOLUTION, true}
+          gateway_artifact_content_limit_bytes: ${GATEWAY_ARTIFACT_LIMIT_BYTES, 10000000}
+
+          system_purpose: >
+                The system is an AI Chatbot with agentic capabilities.
+                It will use the agents available to provide information,
+                reasoning and general assistance for the users in this system.
+                **Always return useful artifacts and files that you create to the user.**
+                Provide a status update before each tool call.
+                Your external name is Agent Mesh.    
+
+          response_format: >
+                Responses should be clear, concise, and professionally toned. 
+                Format responses to the user in Markdown using appropriate formatting.
+
+          frontend_server_url: ${FRONTEND_SERVER_URL, ""}
+          frontend_welcome_message: ${FRONTEND_WELCOME_MESSAGE, "How can I assist you today?"}
+          frontend_bot_name: ${FRONTEND_BOT_NAME, "Solace Agent Mesh"}
+          frontend_collect_feedback: ${FRONTEND_COLLECT_FEEDBACK, false}
+          frontend_auth_login_url: ${EXTERNAL_AUTH_SERVICE_URL}/login?provider=${EXTERNAL_AUTH_PROVIDER}
+          frontend_use_authorization: ${FRONTEND_USE_AUTHORIZATION, false}
+          frontend_redirect_url: ${FRONTEND_REDIRECT_URL, ""}
+          {{- $featureEnablement := .Values.sam.featureEnablement | default dict }}
+          frontend_feature_enablement:
+            awsBedrockEnabled: {{ $featureEnablement.awsBedrockEnabled | default true }}
+            background_tasks: {{ $featureEnablement.backgroundTasks | default true }}
+            binaryArtifactPreview: {{ $featureEnablement.binaryArtifactPreview | default true }}
+            projectIndexing: {{ $featureEnablement.projectIndexing | default true }}
+            projectSharingEnabled: {{ $featureEnablement.projectSharingEnabled | default true }}
+            proCodeAgents:
+              enabled: ${ENABLE_ADVANCED_AGENTS, false}
+              allowDockerImages: ${ALLOW_ADVANCED_AGENT_DOCKER_IMAGES, false}
+
+          # Background Tasks Configuration
+          background_tasks:
+            default_timeout_ms: ${BACKGROUND_TASKS_TIMEOUT_MS, 3600000}
+
+          external_auth_callback_uri: ${EXTERNAL_AUTH_CALLBACK, http://localhost:8000/api/v1/auth/callback}
+          external_auth_service_url: ${EXTERNAL_AUTH_SERVICE_URL, http://localhost:8080}
+          external_auth_provider: ${EXTERNAL_AUTH_PROVIDER, azure}
+
+          {{- $storageType := include "sam.objectStorage.type" . }}
+          artifact_service:
+          {{- if eq $storageType "azure" }}
+            type: "azure"
+            container_name: "${AZURE_STORAGE_CONTAINER_NAME}"
+            account_name: "${AZURE_STORAGE_ACCOUNT_NAME}"
+          {{- else if eq $storageType "gcs" }}
+            type: "gcs"
+            bucket_name: "${GCS_BUCKET_NAME}"
+          {{- else }}
+            type: "s3"
+            bucket_name: "${S3_BUCKET_NAME}"
+            endpoint_url: "${S3_ENDPOINT_URL}"
+          {{- end }}
+
+          session_service:
+            type: "${WEB_UI_SESSION_SERVICE_TYPE}"
+            database_url: "${WEB_UI_GATEWAY_DATABASE_URL}"
+            default_behavior: "PERSISTENT"
+{{- if and .Values.sam.authenticationRbac .Values.sam.authenticationRbac.idpClaims .Values.sam.authenticationRbac.idpClaims.enabled }}
+
+          sam_access_token:
+            enabled: true
+            ttl_seconds: 3600
+
+          trust_manager:
+            enabled: true
+            verification_mode: "strict"
+{{- end }}
+
+          # Task logging requires SQL session storage. Either set session_service.type='sql' with a valid database_url, or disable task_logging.enabled
+          {{- $taskLogging := .Values.sam.taskLogging | default dict }}
+          {{- $hybridBuffer := $taskLogging.hybridBuffer | default dict }}
+          task_logging:
+            enabled: {{ $taskLogging.enabled | default true }}
+            log_status_updates: {{ $taskLogging.logStatusUpdates | default true }}
+            log_artifact_events: {{ $taskLogging.logArtifactEvents | default false }}
+            log_file_parts: {{ $taskLogging.logFileParts | default true }}
+            max_file_part_size_bytes: {{ $taskLogging.maxFilePartSizeBytes | default 10240 }}
+            hybrid_buffer:
+              enabled: {{ $hybridBuffer.enabled | default true }}
+              flush_threshold: {{ $hybridBuffer.flushThreshold | default 10 }}
+
+          trust_manager:
+            enabled: ${TRUST_MANAGER_ENABLED, false}  # Enable or disable the trust manager
+            card_publish_interval_seconds: 10  # Publish every 10 seconds for testing
+            card_expiration_days: 7  # 1 week for development
+            verification_mode: "strict"
+            clock_skew_tolerance_seconds: 300  # 5 minutes tolerance
+            enable_time_validation: true
+            # JWT Configuration (Phase 2)
+            jwt_default_ttl_seconds: 3600  # 1 hour default JWT lifetime
+            jwt_max_ttl_seconds: 86400     # 24 hours maximum JWT lifetime
+
+          platform_service:
+            url: ${PLATFORM_SERVICE_URL, ""}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-platform-config
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  platform.yaml: |
+    log:
+      stdout_log_level: INFO
+      log_file_level: DEBUG
+      log_file: platform_service.log
+
+    !include shared_config.yaml
+
+    apps:
+      - name: platform_service_app
+        app_base_path: .
+        app_module: solace_agent_mesh.services.platform.app
+
+        broker:
+          <<: *broker_connection
+
+        app_config:
+          namespace: ${NAMESPACE}
+          database_url: ${PLATFORM_DATABASE_URL}
+          fastapi_host: ${PLATFORM_API_HOST, 0.0.0.0}
+          fastapi_port: ${PLATFORM_API_PORT, 8001}
+          fastapi_https_port: ${PLATFORM_API_HTTPS_PORT, 4443}
+          ssl_keyfile: ${SSL_KEYFILE}
+          ssl_certfile: ${SSL_CERTFILE}
+          ssl_keyfile_password: ${SSL_KEYFILE_PASSWORD}
+          frontend_use_authorization: ${FRONTEND_USE_AUTHORIZATION, false}
+          external_auth_service_url: ${EXTERNAL_AUTH_SERVICE_URL}
+          external_auth_provider: ${EXTERNAL_AUTH_PROVIDER, azure}
+          max_message_size_bytes: ${MAX_MESSAGE_SIZE_BYTES, 10000000}
+          cors_allowed_origins:
+            - "${FRONTEND_SERVER_URL}"
+            - "http://localhost:3000"
+            - "http://127.0.0.1:3000"
+            - "http://localhost:8000"
+          cors_allowed_origin_regex: ${CORS_ALLOWED_ORIGIN_REGEX}
+{{- if and .Values.sam.authenticationRbac .Values.sam.authenticationRbac.idpClaims .Values.sam.authenticationRbac.idpClaims.enabled }}
+
+          sam_access_token:
+            enabled: true
+          trust_manager:
+            enabled: true
+{{- end }}
+{{- if not .Values.sam.communityMode }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-enterprise-config
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  enterprise_config.yaml: |
+    authorization_service:
+{{- if .Values.sam.authorization.enabled }}
+      type: "default_rbac"
+{{- else }}
+      type: "none"
+{{- end }}
+      role_to_scope_definitions_path: "config/auth/role-to-scope-definitions.yaml"
+{{- if and .Values.sam.authenticationRbac .Values.sam.authenticationRbac.idpClaims .Values.sam.authenticationRbac.idpClaims.enabled }}
+      # IDP claims-based role assignment
+      user_to_role_provider: "idp_claims"
+      idp_claims_config:
+        oidc_provider: {{ required "sam.authenticationRbac.idpClaims.oidcProvider is required when idpClaims is enabled" .Values.sam.authenticationRbac.idpClaims.oidcProvider | quote }}
+        claim_key: {{ required "sam.authenticationRbac.idpClaims.claimKey is required when idpClaims is enabled" .Values.sam.authenticationRbac.idpClaims.claimKey | quote }}
+        mappings:
+        {{- range $claimValue, $roles := .Values.sam.authenticationRbac.idpClaims.mappings }}
+          {{ $claimValue | quote }}:
+          {{- range $roles }}
+            - {{ . }}
+          {{- end }}
+        {{- end }}
+{{- else }}
+      # Static user-to-role assignments
+      user_to_role_assignments_path: "config/auth/user-to-role-assignments.yaml"
+{{- end }}
+      # Default roles (applies to both static and IDP claims methods)
+      default_roles:
+        {{- if and .Values.sam.authenticationRbac .Values.sam.authenticationRbac.defaultRoles }}
+        {{- range .Values.sam.authenticationRbac.defaultRoles }}
+        - {{ . | quote }}
+        {{- end }}
+        {{- else }}
+        - "sam_user"
+        {{- end }}
+    namespace: ${NAMESPACE}
+    gateway_id: ${WEBUI_GATEWAY_ID}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-role-definitions
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  # For more information on RBAC role definitions and scope patterns, see:
+  # https://solacelabs.github.io/solace-agent-mesh/docs/documentation/enterprise/rbac-setup-guide
+  role-to-scope-definitions.yaml: |
+    roles:
+      sam_admin:
+        description: "Full access for SAM administrators"
+        scopes:
+          - "*"
+          - "tasks:read:all"
+      sam_user:
+        description: "Standard user with basic access"
+        scopes:
+          - "agent:*:delegate"
+          - "tool:basic:read"
+          - "tool:basic:search"
+          - "tool:artifact:list"
+          - "tool:artifact:load"
+          - "project:share"
+{{- if and .Values.sam.authenticationRbac .Values.sam.authenticationRbac.customRoles }}
+{{- range $roleName, $roleConfig := .Values.sam.authenticationRbac.customRoles }}
+      {{ $roleName }}:
+        description: {{ $roleConfig.description | quote }}
+        scopes:
+{{- range $roleConfig.scopes }}
+          - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" $ }}-user-roles
+  labels:
+    {{- include "sam.labels" $ | nindent 4 }}
+data:
+  user-to-role-assignments.yaml: |
+    users:
+{{- if .Values.sam.authenticationRbac.users }}
+{{- range .Values.sam.authenticationRbac.users }}
+      {{ .identity }}:
+        roles: {{ .roles | toJson }}
+        description: "{{ .description }}"
+{{- end }}
+{{- else }}
+      # No users configured - add users via sam.authenticationRbac.users in values.yaml
+      admin@example.com:
+        roles: ["sam_admin"]
+        description: "Default SAM Administrator Account - UPDATE IN VALUES"
+{{- end }}
+{{- end }}

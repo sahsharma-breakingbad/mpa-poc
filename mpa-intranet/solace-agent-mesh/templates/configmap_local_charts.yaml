@@ -1,0 +1,15 @@
+{{- if .Values.samDeployment.agentDeployer.localCharts.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" . }}-local-charts
+  labels:
+    {{- include "sam.labels" . | nindent 4 }}
+    app.kubernetes.io/component: local-charts
+  {{- include "sam.annotations" . | nindent 2 }}
+binaryData:
+  # Agent chart package (using binaryData for .tgz file)
+  # The chart file should be placed in the 'files/' directory, not 'charts/' to avoid Helm treating it as a dependency
+  sam-agent-{{ .Values.samDeployment.agentDeployer.chartVersion }}.tgz: |
+    {{- required (printf "Chart file 'files/sam-agent-%s.tgz' not found" .Values.samDeployment.agentDeployer.chartVersion) (.Files.Get (printf "files/sam-agent-%s.tgz" .Values.samDeployment.agentDeployer.chartVersion)) | b64enc | nindent 4 }}
+{{- end }}

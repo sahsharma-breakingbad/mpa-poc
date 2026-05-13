@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sam.fullname" . }}-config
+  labels:
+    {{- include "sam.labels" . | nindent 4 }}
+  {{- include "sam.annotations" . | nindent 2 }}
+data:
+{{- if not (include "sam.configYaml" .) }}
+{{- fail "config.yaml is required. Please provide the configuration using:\n  helm install --set-file config.yaml=/path/to/config.yaml (or --set-file config.agentYaml=<path> for backward compatibility)" }}
+{{- end }}
+  agent.yaml: |-
+{{ include "sam.configYaml" . | nindent 4 }}

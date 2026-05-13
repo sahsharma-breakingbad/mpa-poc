@@ -1,0 +1,202 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: port_list_resync_workflow.log
+
+!include ../shared_config.yaml
+
+# ── Shared RAG pipeline config (for PortListSyncAgent) ──
+_rag_pipeline_config: &rag_pipeline_config
+  scanner:
+    batch: true
+    use_memory_storage: true
+    sources:
+      - type: filesystem
+        directories: ["${DOCUMENTS_PATH}"]
+        filters:
+          file_formats: [".md"]
+          max_file_size: 10240
+        schedule:
+          interval: 60
+  splitter:
+    default:
+      method: MarkdownSplitter
+      params:
+        chunk_size: 2048
+        chunk_overlap: 400
+        headers_to_split_on: ["#", "##", "###"]
+        strip_headers: false
+  embedding:
+    embedder_type: "openai"
+    embedder_params:
+      model: "${OPENAI_EMBEDDING_MODEL}"
+      api_key: "${OPENAI_EMBEDDING_API_KEY}"
+      api_base: "${OPENAI_EMBEDDING_API_ENDPOINT}"
+      batch_size: 128
+    normalize_embeddings: true
+  vector_db:
+    db_type: "qdrant"
+    db_params:
+      url: "${QDRANT_URL}"
+      api_key: "${QDRANT_API_KEY}"
+      collection_name: "${QDRANT_COLLECTION}"
+      embedding_dimension: ${QDRANT_EMBEDDING_DIMENSION}
+      hnsw_config:
+        m: 32
+        ef_construct: 200
+      on_disk: false
+  llm:
+    load_balancer:
+      - model_name: "gpt-4o"
+        litellm_params:
+          model: ${LLM_SERVICE_GENERAL_MODEL_NAME}
+          api_key: ${LLM_SERVICE_API_KEY}
+          api_base: ${LLM_SERVICE_ENDPOINT}
+          temperature: 0.01
+          max_tokens: 4096
+          timeout: 30
+  retrieval:
+    top_k: 5
+
+# ══════════════════════════════════════════════════════════════════════
+# STANDALONE WORKFLOW: High-Risk Port List Re-Sync
+# Self-contained — run independently with: sam run ./configs/workflow/port_list_resync_workflow.yaml
+# ══════════════════════════════════════════════════════════════════════
+
+apps:
+  # ── AGENT: Port List Sync Agent ──
+  - name: port_list_sync_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "PortListSyncAgent"
+      model: *planning_model
+      max_llm_calls: 4
+
+      instruction: |
+        You are the Port List Sync Agent. Your only job is to read the high-risk-ports_v1.md
+        file and sync it into Qdrant using the delete-then-reupload pattern.
+        Execute ONLY the tool calls specified in the workflow node instruction — do NOT add extra planning, analysis, or additional tool calls.
+
+      agent_init_function:
+        module: "sam_rag.lifecycle"
+        name: "initialize_rag_agent"
+        config:
+          <<: *rag_pipeline_config
+          retrieval:
+            top_k: 5
+
+      agent_cleanup_function:
+        module: "sam_rag.lifecycle"
+        name: "cleanup_rag_agent_resources"
+
+      tools:
+        - tool_type: python
+          component_module: "qdrant_sync_tools"
+          function_name: "read_document_file"
+          description: "Read a document file from the documents directory. Returns the file content as a string."
+        - tool_type: python
+          component_module: "qdrant_sync_tools"
+          function_name: "sync_document_to_qdrant"
+          description: "Full sync: delete old Qdrant entries by document_type, then write new file. Returns the file path for ingest_document."
+        - tool_type: python
+          component_module: "sam_rag.tools"
+          function_name: "ingest_document"
+          required_scopes: ["rag:ingest:write"]
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card:
+        description: "INTERNAL workflow agent for PortListResyncWorkflow ONLY. NOT for PAN screening, ship compliance, vessel checks, or any direct user queries."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "internal_sync_port_list"
+            name: "Internal Document Sync"
+            description: "INTERNAL USE ONLY. Syncs document files to vector database. Called exclusively by PortListResyncWorkflow. NOT for PAN screening or ship compliance."
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ── WORKFLOW: Port List Re-Sync ──
+  - name: port_list_resync_workflow
+    app_base_path: .
+    app_module: solace_agent_mesh.workflow.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      name: "PortListResyncWorkflow"
+      display_name: "High-Risk Port List Re-Sync"
+
+      workflow:
+        version: "1.0.0"
+        description: |
+          Lightweight workflow that re-syncs the high-risk-ports_v1.md file into Qdrant.
+          Deletes all existing Qdrant entries for document_type "high-risk-ports_v1",
+          then re-writes the file so the RAG scanner auto-ingests it.
+          No LLM analysis — just a clean delete-and-reingest cycle.
+
+          Trigger: User requests a port list resync or refresh of the high-risk ports in the KB.
+
+        input_schema:
+          type: object
+          properties: {}
+
+        output_schema:
+          type: object
+          properties:
+            sync_status: {type: string, enum: ["success", "partial", "failed"]}
+            documents_synced: {type: array, items: {type: string}}
+            document_types_updated: {type: array, items: {type: string}}
+            sync_timestamp: {type: string}
+            errors: {type: array, items: {type: string}}
+          required: [sync_status, documents_synced, document_types_updated]
+
+        nodes:
+          - id: resync_ports
+            type: agent
+            agent_name: "PortListSyncAgent"
+            instruction: |
+              Execute exactly these tool calls in order. Do NOT add analysis or commentary.
+
+              CALL 1: read_document_file(filename="high-risk-ports_v1.md")
+              CALL 2: sync_document_to_qdrant(content=<content from CALL 1>, filename="high-risk-ports_v1.md", document_type="high-risk-ports_v1")
+
+              sync_document_to_qdrant deletes old Qdrant entries and writes the updated file.
+              The RAG scanner will automatically re-ingest it within 60 seconds.
+
+              After both calls, return JSON matching the output schema:
+              - sync_status: "success" if both calls succeeded, "failed" otherwise
+              - documents_synced: ["high-risk-ports_v1.md"]
+              - document_types_updated: ["high-risk-ports_v1"]
+              - sync_timestamp: current ISO timestamp
+              - errors: list of any error messages (empty array if none)
+            input: {}
+
+        output_mapping:
+          sync_status: "{{resync_ports.output.sync_status}}"
+          documents_synced: "{{resync_ports.output.documents_synced}}"
+          document_types_updated: "{{resync_ports.output.document_types_updated}}"
+          sync_timestamp: "{{resync_ports.output.sync_timestamp}}"
+          errors: "{{resync_ports.output.errors}}"
+
+        skills:
+          - id: "resync_port_list"
+            name: "Re-Sync High-Risk Port List"
+            description: "Re-sync the high-risk-ports_v1.md file into Qdrant. Deletes old entries and re-ingests the file. Use when the port list file has been manually updated and needs to be refreshed in the knowledge base."
+            tags: ["resync", "port-list", "refresh", "sync-ports", "reingest"]
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}

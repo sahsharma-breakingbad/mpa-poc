@@ -1,0 +1,1452 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Ship Data API",
+    "description": "API for retrieving detailed ship information including vessel details, compliance, company relationships, inspections, and more.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://shipsapi.maritime.spglobal.com",
+      "description": "S&P Global Maritime Ships API"
+    }
+  ],
+  "security": [
+    {
+      "basicAuth": []
+    }
+  ],
+  "paths": {
+    "/MaritimeWCF/APSShipService.svc/RESTFul/GetShipDataByIHSLRorIMO": {
+      "get": {
+        "operationId": "getShipDataByIHSLRorIMO",
+        "summary": "Get ship data by IHS LR number or IMO number",
+        "description": "Retrieves comprehensive ship detail data by IHS Lloyd's Register number or IMO number, including vessel specifications, compliance status, company relationships, and historical records.",
+        "parameters": [
+          {
+            "name": "ihslrOrImo",
+            "in": "query",
+            "required": true,
+            "description": "The IHS Lloyd's Register number or IMO number of the ship",
+            "schema": {
+              "type": "string"
+            },
+            "example": "1234567"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with ship details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Ship not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "basicAuth": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "HTTP Basic Authentication with username and password"
+      }
+    },
+    "schemas": {
+      "DataSetVersion": {
+        "type": "object",
+        "properties": {
+          "dataSetVersion": { "type": "string" }
+        }
+      },
+      "ApsStatus": {
+        "type": "object",
+        "properties": {
+          "systemVersion": { "type": "string" },
+          "systemDate": { "type": "string", "format": "date-time" },
+          "jobRunDate": { "type": "string", "format": "date-time" },
+          "completedOK": { "type": "boolean" },
+          "errorLevel": { "type": "string" },
+          "errorMessage": { "type": "string" },
+          "remedialAction": { "type": "string" },
+          "guid": { "type": "string", "format": "uuid" }
+        }
+      },
+      "AdditionalInformation": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "tweenDeckFixed": { "type": "string" },
+          "tweenDeckPortable": { "type": "string" },
+          "deckHeatExchangerInd": { "type": "string" },
+          "deckHeatExchangerMaterial": { "type": "string" },
+          "drillBargeInd": { "type": "string" },
+          "drillDepthMax": { "type": "string" },
+          "lrno": { "type": "string" },
+          "productionVesselInd": { "type": "string" },
+          "shipEmail": { "type": "string" },
+          "waterDepthMax": { "type": "string" },
+          "satComID": { "type": "string" },
+          "satComAnsBack": { "type": "string" }
+        }
+      },
+      "Arrangement": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "structure": { "type": "string" },
+          "sequence": { "type": "string" },
+          "position": { "type": "string" },
+          "type": { "type": "string" },
+          "material": { "type": "string" },
+          "length": { "type": "string" },
+          "breadth": { "type": "string" }
+        }
+      },
+      "AuxEngine": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "bore": { "type": "string" },
+          "engineDesigner": { "type": "string" },
+          "engineModel": { "type": "string" },
+          "engineBuilder": { "type": "string" },
+          "engineSequence": { "type": "string" },
+          "lrno": { "type": "string" },
+          "maxPower": { "type": "string" },
+          "numberOfCylinders": { "type": "string" },
+          "stroke": { "type": "string" },
+          "strokeType": { "type": "string" }
+        }
+      },
+      "AuxGenerator": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "acdc": { "type": "string" },
+          "frequency": { "type": "string" },
+          "kwEach": { "type": "string" },
+          "lrno": { "type": "string" },
+          "mainEngineDriven": { "type": "string" },
+          "number": { "type": "string" },
+          "seq": { "type": "string" },
+          "voltage1": { "type": "string" },
+          "voltage2": { "type": "string" }
+        }
+      },
+      "Boiler": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "boiler": { "type": "string" },
+          "boilerCode": { "type": "string" },
+          "lrno": { "type": "string" },
+          "numberOfBoilers": { "type": "string" },
+          "sequence": { "type": "string" }
+        }
+      },
+      "BoilerExpanded": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "sequence": { "type": "string" },
+          "builder": { "type": "string" },
+          "design": { "type": "string" },
+          "effectiveDate": { "type": "string" },
+          "numberOfBoilers": { "type": "string" },
+          "boilerTypeCode": { "type": "string" },
+          "boilerTypeDecode": { "type": "string" },
+          "firingTypeCode": { "type": "string" },
+          "firingTypeDecode": { "type": "string" }
+        }
+      },
+      "BuilderAddress": {
+        "type": "object",
+        "properties": {
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "builderCode": { "type": "string" },
+          "contact": { "type": "string" },
+          "countryCode": { "type": "string" },
+          "countryName": { "type": "string" },
+          "emailAddress": { "type": "string" },
+          "facsimile": { "type": "string" },
+          "fullAddress": { "type": "string" },
+          "shipBuilder": { "type": "string" },
+          "shipBuilderFullStyle": { "type": "string" },
+          "telephone": { "type": "string" },
+          "telex": { "type": "string" },
+          "town": { "type": "string" },
+          "townCode": { "type": "string" },
+          "website": { "type": "string" },
+          "builderStatus": { "type": "string" }
+        }
+      },
+      "Capacity": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "bale": { "type": "string" },
+          "horsepower": { "type": "string" },
+          "numberOfBarges": { "type": "string" },
+          "bollardPull": { "type": "string" },
+          "numberOfCars": { "type": "string" },
+          "gasCapacity": { "type": "string" },
+          "grainCapacity": { "type": "string" },
+          "indicatedHorsepower": { "type": "string" },
+          "liquidCapacity": { "type": "string" },
+          "numberOfPassengers": { "type": "string" },
+          "numberRefrigeratedContainers": { "type": "string" },
+          "numberOfTEU": { "type": "string" },
+          "numberOfTrucks": { "type": "string" },
+          "numberOfVehicles": { "type": "string" },
+          "numberOfRailWagons": { "type": "string" }
+        }
+      },
+      "CargoPump": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "cubicMetersCapacity": { "type": "string" },
+          "cubicTonsCapacity": { "type": "string" },
+          "lrno": { "type": "string" },
+          "numberOfPumps": { "type": "string" },
+          "sequence": { "type": "string" }
+        }
+      },
+      "ClassRecord": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "class": { "type": "string" },
+          "classCode": { "type": "string" },
+          "classID": { "type": "string" },
+          "classIndicator": { "type": "string" },
+          "effectiveDate": { "type": "string" },
+          "lrno": { "type": "string" }
+        }
+      },
+      "ClassHistoryRecord": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "class": { "type": "string" },
+          "classCode": { "type": "string" },
+          "classIndicator": { "type": "string" },
+          "classID": { "type": "string" },
+          "currentIndicator": { "type": "string" },
+          "effectiveDate": { "type": "string" },
+          "lrno": { "type": "string" },
+          "sequence": { "type": "string" }
+        }
+      },
+      "ClassWithdrawn": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "class": { "type": "string" },
+          "lrno": { "type": "string" },
+          "reason": { "type": "string" },
+          "withdrawnDate": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CrewList": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "id": { "type": "string" },
+          "lrno": { "type": "string" },
+          "shipname": { "type": "string" },
+          "crewListDate": { "type": "string", "format": "date-time" },
+          "nationality": { "type": "string" },
+          "totalCrew": { "type": "string" },
+          "totalRatings": { "type": "string" },
+          "totalOfficers": { "type": "string" },
+          "totalCadets": { "type": "string" },
+          "totalTrainees": { "type": "string" },
+          "totalRidingSquad": { "type": "string" },
+          "totalUndeclared": { "type": "string" }
+        }
+      },
+      "CompanyCompliance": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "owCode": { "type": "string" },
+          "shortCompanyName": { "type": "string" },
+          "companyOnOFACSanctionList": { "type": "string" },
+          "companyOnUNSanctionList": { "type": "string" },
+          "companyOnEUSanctionList": { "type": "string" },
+          "companyOnBESSanctionList": { "type": "string" },
+          "companyInOFACSanctionedCountry": { "type": "string" },
+          "companyInFATFJurisdiction": { "type": "string" },
+          "parentCompanyComplianceRisk": { "type": "string" },
+          "overallComplianceStatus": { "type": "string" }
+        }
+      },
+      "CompanyComplianceDetails": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "owCode": { "type": "string" },
+          "shortCompanyName": { "type": "string" },
+          "companyOnOFACSanctionList": { "type": "string" },
+          "companyOnUNSanctionList": { "type": "string" },
+          "companyOnEUSanctionList": { "type": "string" },
+          "companyOnBESSanctionList": { "type": "string" },
+          "companyInOFACSanctionedCountry": { "type": "string" },
+          "companyInFATFJurisdiction": { "type": "string" },
+          "parentCompanyComplianceRisk": { "type": "string" },
+          "companyOverallComplianceStatus": { "type": "string" },
+          "companyOnAustralianSanctionList": { "type": "string" },
+          "companyOnCanadianSanctionList": { "type": "string" },
+          "companyOnSwissSanctionList": { "type": "string" },
+          "companyOnOFACSSIList": { "type": "string" },
+          "companyOnOFACNonSDNSanctionList": { "type": "string" },
+          "companyOnUAESanctionList": { "type": "string" }
+        }
+      },
+      "Company": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "companyStatus": { "type": "string" },
+          "countryName": { "type": "string" },
+          "emailaddress": { "type": "string" },
+          "facsimile": { "type": "string" },
+          "fullAddress": { "type": "string" },
+          "fullName": { "type": "string" },
+          "lastChangeDate": { "type": "string" },
+          "nationalityOfControl": { "type": "string" },
+          "nationalityOfRegistration": { "type": "string" },
+          "owcode": { "type": "string" },
+          "shortCompanyName": { "type": "string" },
+          "telephone": { "type": "string" },
+          "telex": { "type": "string" },
+          "website": { "type": "string" }
+        }
+      },
+      "CompanyDetailsAndParent": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "companyStatus": { "type": "string" },
+          "countryName": { "type": "string" },
+          "emailaddress": { "type": "string" },
+          "facsimile": { "type": "string" },
+          "fullAddress": { "type": "string" },
+          "fullName": { "type": "string" },
+          "lastChangeDate": { "type": "string" },
+          "nationalityOfControl": { "type": "string" },
+          "nationalityOfRegistration": { "type": "string" },
+          "owcode": { "type": "string" },
+          "parentCompany": { "type": "string" },
+          "shortCompanyName": { "type": "string" },
+          "telephone": { "type": "string" },
+          "telex": { "type": "string" },
+          "website": { "type": "string" }
+        }
+      },
+      "CompanyVesselRelationship": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "docCode": { "type": "string" },
+          "docCompany": { "type": "string" },
+          "docGroup": { "type": "string" },
+          "docGroupCode": { "type": "string" },
+          "groupBeneficialOwner": { "type": "string" },
+          "groupBeneficialOwnerCode": { "type": "string" },
+          "lrno": { "type": "string" },
+          "operator": { "type": "string" },
+          "operatorCode": { "type": "string" },
+          "operatorGroup": { "type": "string" },
+          "operatorGroupCode": { "type": "string" },
+          "registeredOwner": { "type": "string" },
+          "registeredOwnerCode": { "type": "string" },
+          "shipManager": { "type": "string" },
+          "shipManagerCode": { "type": "string" },
+          "shipManagerGroup": { "type": "string" },
+          "shipManagerGroupCode": { "type": "string" },
+          "technicalManager": { "type": "string" },
+          "technicalManagerCode": { "type": "string" },
+          "technicalManagerGroup": { "type": "string" },
+          "technicalManagerGroupCode": { "type": "string" }
+        }
+      },
+      "DarkActivity": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "mmsi": { "type": "string" },
+          "vessel_Name": { "type": "string" },
+          "dark_Hours": { "type": "string" },
+          "dark_Activity": { "type": "string" },
+          "dark_Status": { "type": "string" },
+          "area_Id": { "type": "string" },
+          "area_Name": { "type": "string" },
+          "area_Country": { "type": "string" },
+          "dark_Time": { "type": "string" },
+          "dark_Latitude": { "type": "string" },
+          "dark_Longitude": { "type": "string" },
+          "dark_Speed": { "type": "string" },
+          "dark_Heading": { "type": "string" },
+          "dark_Draught": { "type": "string" },
+          "nextSeen": { "type": "string" },
+          "nextSeen_Latitude": { "type": "string" },
+          "nextSeen_Longitude": { "type": "string" },
+          "nextSeen_Speed": { "type": "string" },
+          "nextSeen_Draught": { "type": "string" },
+          "nextSeen_Heading": { "type": "string" },
+          "dark_Reported_Destination": { "type": "string" },
+          "nextSeen_Reported_Destination": { "type": "string" },
+          "last_Port_of_Call": { "type": "string" },
+          "last_Port_Country_Code": { "type": "string" },
+          "last_Port_Country": { "type": "string" }
+        }
+      },
+      "Defect": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "action_1": { "type": "string" },
+          "action_2": { "type": "string" },
+          "action_3": { "type": "string" },
+          "action_Code_1": { "type": "string" },
+          "action_Code_2": { "type": "string" },
+          "action_Code_3": { "type": "string" },
+          "classIsResponsible": { "type": "string" },
+          "defect_Code": { "type": "string" },
+          "defect_ID": { "type": "string" },
+          "defect_Text": { "type": "string" },
+          "defectiveItemCode": { "type": "string" },
+          "detentionReasonDeficiency": { "type": "string" },
+          "inspection_ID": { "type": "string" },
+          "main_Defect_Code": { "type": "string" },
+          "main_Defect_Text": { "type": "string" },
+          "natureOfDefectCode": { "type": "string" },
+          "natureOfDefectDecode": { "type": "string" },
+          "other_Action": { "type": "string" },
+          "other_Recognised_Org_Resp": { "type": "string" },
+          "recognised_Org_Resp": { "type": "string" },
+          "recognised_Org_Resp_Code": { "type": "string" },
+          "recognised_Org_Resp_YN": { "type": "string" },
+          "isAccidentalDamage": { "type": "string" }
+        }
+      },
+      "Destination": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "aisDestinationRaw": { "type": "string" },
+          "destinationCountry": { "type": "string" },
+          "destinationCountryCode": { "type": "string" },
+          "destinationPortOfCall": { "type": "string" },
+          "eta": { "type": "string", "format": "date-time" },
+          "lastUpdated": { "type": "string", "format": "date-time" },
+          "lrno": { "type": "string" },
+          "shipName": { "type": "string" },
+          "worldPortNumber": { "type": "string" }
+        }
+      },
+      "DocHistory": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "companyStatus": { "type": "string" },
+          "docCompany": { "type": "string" },
+          "docCompanyCode": { "type": "string" },
+          "effectiveDate": { "type": "string" },
+          "lrno": { "type": "string" },
+          "sequence": { "type": "string" }
+        }
+      },
+      "EngineBuilder": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "engineBuilderLargestCode": { "type": "string" },
+          "engineBuilderShortName": { "type": "string" },
+          "engineBuilderFullName": { "type": "string" },
+          "fullAddress": { "type": "string" },
+          "townName": { "type": "string" },
+          "countryName": { "type": "string" },
+          "telephone": { "type": "string" },
+          "facsimile": { "type": "string" },
+          "emailAddress": { "type": "string" },
+          "website": { "type": "string" },
+          "telex": { "type": "string" },
+          "countryCode": { "type": "string" },
+          "townCode": { "type": "string" }
+        }
+      },
+      "Fixture": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "charterer": { "type": "string" },
+          "chartererCode": { "type": "string" },
+          "charterPartyCommodity": { "type": "string" },
+          "charterPartyDates": { "type": "string" },
+          "charterPartyRate": { "type": "string" },
+          "charterPartyTerms": { "type": "string" },
+          "charterPartyTonnage": { "type": "string" },
+          "commoditySubtype": { "type": "string" },
+          "commodity": { "type": "string" },
+          "dateOffFixture": { "type": "string", "format": "date-time" },
+          "dateOnFixture": { "type": "string", "format": "date-time" },
+          "dateReported": { "type": "string", "format": "date-time" },
+          "destinationArea": { "type": "string" },
+          "destinationPort": { "type": "string" },
+          "destinationPortCode": { "type": "string" },
+          "fixtureID": { "type": "string" },
+          "lrno": { "type": "string" },
+          "originArea": { "type": "string" },
+          "originPort": { "type": "string" },
+          "originPortCode": { "type": "string" },
+          "shipnameReported": { "type": "string" },
+          "size": { "type": "string" },
+          "timeCharterRate": { "type": "string" }
+        }
+      },
+      "FlagHistory": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "effectiveDate": { "type": "string" },
+          "flag": { "type": "string" },
+          "flagCode": { "type": "string" },
+          "lrno": { "type": "string" },
+          "sequence": { "type": "string" }
+        }
+      },
+      "Inspection": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "authorisation": { "type": "string" },
+          "callSign": { "type": "string" },
+          "cargo": { "type": "string" },
+          "charterer": { "type": "string" },
+          "class": { "type": "string" },
+          "country": { "type": "string" },
+          "date_Release": { "type": "string", "format": "date-time" },
+          "detained": { "type": "string" },
+          "dwt": { "type": "string" },
+          "expanded_Inspection": { "type": "string" },
+          "flag": { "type": "string" },
+          "follow_Up_Inspection": { "type": "string" },
+          "gt": { "type": "string" },
+          "inspection_Date": { "type": "string", "format": "date-time" },
+          "inspection_ID": { "type": "string" },
+          "lrno": { "type": "string" },
+          "manager": { "type": "string" },
+          "no_Days_Detained": { "type": "string" },
+          "no_Defects": { "type": "string" },
+          "number_Part_Days_Detained": { "type": "string" },
+          "other_Inspection_Type": { "type": "string" },
+          "owner": { "type": "string" },
+          "port": { "type": "string" },
+          "shipname": { "type": "string" },
+          "shiptype": { "type": "string" },
+          "source": { "type": "string" },
+          "yob": { "type": "string" }
+        }
+      },
+      "LastRecordedPortOfCall": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "arrivalDateFull": { "type": "string", "format": "date-time" },
+          "country": { "type": "string" },
+          "hoursInPort": { "type": "string" },
+          "lrno": { "type": "string" },
+          "moveType": { "type": "string" },
+          "port": { "type": "string" },
+          "sailDateFull": { "type": "string", "format": "date-time" },
+          "worldPortNumber": { "type": "string" }
+        }
+      },
+      "LiftingGear": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "gearType": { "type": "string" },
+          "lrno": { "type": "string" },
+          "maxSWLOfGear": { "type": "string" },
+          "numberOfGears": { "type": "string" },
+          "sequence": { "type": "string" }
+        }
+      },
+      "MainEngine": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "bhpOfMainOilEngines": { "type": "string" },
+          "bore": { "type": "string" },
+          "cylinderArrangementCode": { "type": "string" },
+          "cylinderArrangementDecode": { "type": "string" },
+          "engineBuilder": { "type": "string" },
+          "engineBuilderCode": { "type": "string" },
+          "engineDesigner": { "type": "string" },
+          "engineMakerCode": { "type": "string" },
+          "engineModel": { "type": "string" },
+          "engineType": { "type": "string" },
+          "lrno": { "type": "string" },
+          "numberOfCylinders": { "type": "string" },
+          "position": { "type": "string" },
+          "powerBHP": { "type": "string" },
+          "powerKW": { "type": "string" },
+          "rpm": { "type": "string" },
+          "stroke": { "type": "string" },
+          "strokeType": { "type": "string" }
+        }
+      },
+      "MainGenerator": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "aC_DCIndicator": { "type": "string" },
+          "frequency": { "type": "string" },
+          "generatorMaker": { "type": "string" },
+          "generatorPosition": { "type": "string" },
+          "kw": { "type": "string" },
+          "lrno": { "type": "string" },
+          "number": { "type": "string" },
+          "sequenceNumber": { "type": "string" },
+          "voltage": { "type": "string" }
+        }
+      },
+      "NameHistory": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "effective_Date": { "type": "string" },
+          "lrno": { "type": "string" },
+          "sequence": { "type": "string" },
+          "vesselName": { "type": "string" }
+        }
+      },
+      "OwnerHistory": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "companyStatus": { "type": "string" },
+          "effectiveDate": { "type": "string" },
+          "lrno": { "type": "string" },
+          "owner": { "type": "string" },
+          "ownerCode": { "type": "string" },
+          "sequence": { "type": "string" }
+        }
+      },
+      "Propeller": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "nozzleType": { "type": "string" },
+          "propellerPosition": { "type": "string" },
+          "propellerType": { "type": "string" },
+          "propellerTypeCode": { "type": "string" },
+          "rpmMaximum": { "type": "string" },
+          "rpmService": { "type": "string" },
+          "sequence": { "type": "string" }
+        }
+      },
+      "RecentPosition": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "heading": { "type": "string" },
+          "lastUpdateReceived": { "type": "string", "format": "date-time" },
+          "latitude": { "type": "string" },
+          "longitude": { "type": "string" },
+          "lrno": { "type": "string" },
+          "speed": { "type": "string" }
+        }
+      },
+      "Sale": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "reportedSoldTo": { "type": "string" },
+          "reportedSoldToCode": { "type": "string" },
+          "saleDate": { "type": "string" },
+          "salePriceUSD": { "type": "string" },
+          "salesText": { "type": "string" },
+          "sequence": { "type": "string" },
+          "type": { "type": "string" }
+        }
+      },
+      "ShipCertificate": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "certificate_ID": { "type": "string" },
+          "certificate_Title": { "type": "string" },
+          "certificate_Title_Code": { "type": "string" },
+          "class_SOC_Of_Issuer": { "type": "string" },
+          "expiry_Date": { "type": "string", "format": "date-time" },
+          "inspection_ID": { "type": "string" },
+          "issue_Date": { "type": "string", "format": "date-time" },
+          "issuing_Authority": { "type": "string" },
+          "issuing_Authority_Code": { "type": "string" },
+          "last_Survey_Date": { "type": "string", "format": "date-time" },
+          "latest_Survey_Place": { "type": "string" },
+          "latest_Survey_Place_Code": { "type": "string" },
+          "lrno": { "type": "string" },
+          "other_Issuing_Authority": { "type": "string" },
+          "other_Survey_Authority": { "type": "string" },
+          "survey_Authority": { "type": "string" },
+          "survey_Authority_Code": { "type": "string" },
+          "survey_Authority_Type": { "type": "string" }
+        }
+      },
+      "ScrubberDetails": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "scrubberDesigner": { "type": "string" },
+          "scrubberRetrofitted": { "type": "string" },
+          "scrubberRetrofittedYear": { "type": "string" },
+          "scrubberType": { "type": "string" }
+        }
+      },
+      "Thruster": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "sequence": { "type": "string" },
+          "thrusterType": { "type": "string" },
+          "thrusterTypeCode": { "type": "string" },
+          "numberOfThrusters": { "type": "string" },
+          "thrusterPosition": { "type": "string" },
+          "thrusterBHP": { "type": "string" },
+          "thrusterKW": { "type": "string" },
+          "typeOfInstallation": { "type": "string" }
+        }
+      },
+      "Battery": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "batteryManufacturer": { "type": "string" },
+          "batteryCapacitykWh": { "type": "string" },
+          "batteryVoltageMaxVDC": { "type": "string" },
+          "batteryVoltageMinVDC": { "type": "string" },
+          "batteryTechnology": { "type": "string" },
+          "batteryPropulsionType": { "type": "string" },
+          "batteryRetrofitted": { "type": "string" },
+          "batteryRetrofittedYear": { "type": "string" },
+          "batteryIntegrator": { "type": "string" }
+        }
+      },
+      "BallastWaterManagement": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "lrno": { "type": "string" },
+          "ballastWaterManufacturer": { "type": "string" },
+          "ballastWaterModel": { "type": "string" },
+          "ballastWaterClassNotation": { "type": "string" }
+        }
+      },
+      "ApsShipDetail": {
+        "type": "object",
+        "properties": {
+          "typeId": { "type": "string" },
+          "dataSetVersion": { "$ref": "#/components/schemas/DataSetVersion" },
+          "alterationsDescriptiveNarrative": { "type": "string" },
+          "auxiliaryEnginesNarrative": { "type": "string" },
+          "auxiliaryGeneratorsDescriptiveNarrative": { "type": "string" },
+          "baleCapacity": { "type": "string" },
+          "bareboatCharterCompanyCode": { "type": "string" },
+          "bareboatCharterEffectiveDate": { "type": "string" },
+          "bareboatCharterCountryOfControlCode": { "type": "string" },
+          "bareboatCharterCountryOfControl": { "type": "string" },
+          "bareboatCharterCountryOfDomicileCode": { "type": "string" },
+          "bareboatCharterCountryOfDomicile": { "type": "string" },
+          "bareboatCharterCountryOfRegistrationCode": { "type": "string" },
+          "bareboatCharterCountryOfRegistration": { "type": "string" },
+          "bareboatCharterCompany": { "type": "string" },
+          "bollardPull": { "type": "string" },
+          "boilersDescriptiveNarrative": { "type": "string" },
+          "boilerManufacturer": { "type": "string" },
+          "bowDischargeFacility": { "type": "string" },
+          "bowLoadingFacility": { "type": "string" },
+          "bowStoppersNo": { "type": "string" },
+          "bowStoppersSWL": { "type": "string" },
+          "bowStoppersType": { "type": "string" },
+          "bowToCentreManifold": { "type": "string" },
+          "breadth": { "type": "string" },
+          "bulbousBow": { "type": "string" },
+          "breadthExtreme": { "type": "string" },
+          "breadthMoulded": { "type": "string" },
+          "bunkersDescriptiveNarrative": { "type": "string" },
+          "callSign": { "type": "string" },
+          "cancelDate": { "type": "string" },
+          "cargoCapacitiesNarrative": { "type": "string" },
+          "cargoGradesSegregations": { "type": "string" },
+          "cargoManifoldType": { "type": "string" },
+          "cargoTankCoatings": { "type": "string" },
+          "cargoTankHeatExchangerMaterial": { "type": "string" },
+          "cargoTankHeatExchangers": { "type": "string" },
+          "casualtyDate": { "type": "string" },
+          "chartererLatestReported": { "type": "string" },
+          "chartererLatestReportedOffFixture": { "type": "string" },
+          "chartererLatestReportedOnFixture": { "type": "string" },
+          "classNarrative": { "type": "string" },
+          "classificationSociety": { "type": "string" },
+          "classificationSocietyCode": { "type": "string" },
+          "cleanBallastCapacity": { "type": "string" },
+          "clearDeckArea_m2": { "type": "string" },
+          "clearHeightOfROROLanes": { "type": "string" },
+          "closedLoadingSystem": { "type": "string" },
+          "compensatedGrossTonnageCGT": { "type": "string" },
+          "contractDate": { "type": "string" },
+          "constructionDescriptiveNarrative": { "type": "string" },
+          "consumptionSpeed1": { "type": "string" },
+          "consumptionSpeed2": { "type": "string" },
+          "consumptionValue1": { "type": "string" },
+          "consumptionValue2": { "type": "string" },
+          "conversionDateLatest": { "type": "string" },
+          "coreShipInd": { "type": "string" },
+          "countryOfBreaking": { "type": "string" },
+          "countryOfBuild": { "type": "string" },
+          "countryOfBuildCode": { "type": "string" },
+          "countryOfEconomicBenefit": { "type": "string" },
+          "craneSWL": { "type": "string" },
+          "crudeOilWashingCOW": { "type": "string" },
+          "dateBreakingCommenced": { "type": "string" },
+          "dateOfBuild": { "type": "string" },
+          "dateOfBuildConversionInd": { "type": "string" },
+          "dateOfBuildConvertedDate": { "type": "string", "format": "date-time" },
+          "dateOfLastInspection": { "type": "string", "format": "date-time" },
+          "deadweight": { "type": "string" },
+          "deathDate": { "type": "string" },
+          "deliveryDate": { "type": "string" },
+          "deliveryDateConversionInd": { "type": "string" },
+          "deliveryDateConvertedDate": { "type": "string", "format": "date-time" },
+          "depth": { "type": "string" },
+          "derrickSWL": { "type": "string" },
+          "dischargeDiameterOfCargoManifold": { "type": "string" },
+          "displacement": { "type": "string" },
+          "docCompany": { "type": "string" },
+          "docCountryOfControl": { "type": "string" },
+          "docCompanyCountryOfDomicileCode": { "type": "string" },
+          "documentOfComplianceDOCCompanyCode": { "type": "string" },
+          "docCompanyCountryOfDomicile": { "type": "string" },
+          "docCountryOfRegistration": { "type": "string" },
+          "draught": { "type": "string" },
+          "exName": { "type": "string" },
+          "fairplayID": { "type": "string" },
+          "fishingNumber": { "type": "string" },
+          "flagCode": { "type": "string" },
+          "flagEffectiveDate": { "type": "string" },
+          "flagName": { "type": "string" },
+          "flashPointOver60c": { "type": "string" },
+          "flashPointUnder60c": { "type": "string" },
+          "formulaDWT": { "type": "string" },
+          "freeboard": { "type": "string" },
+          "fuelConsumptionMainEnginesOnly": { "type": "string" },
+          "fuelConsumptionTotal": { "type": "string" },
+          "fuelType1Capacity": { "type": "string" },
+          "fuelType1Code": { "type": "string" },
+          "fuelType1First": { "type": "string" },
+          "fuelType2Capacity": { "type": "string" },
+          "fuelType2Code": { "type": "string" },
+          "fuelType2Second": { "type": "string" },
+          "gasCapacity": { "type": "string" },
+          "gearDescriptiveNarrative": { "type": "string" },
+          "gearNoLargest": { "type": "string" },
+          "gearTypeLargest": { "type": "string" },
+          "gearSWLLargest": { "type": "string" },
+          "gearless": { "type": "string" },
+          "grainCapacity": { "type": "string" },
+          "grossTonnage": { "type": "string" },
+          "groupBeneficialOwner": { "type": "string" },
+          "groupBeneficialOwnerCompanyCode": { "type": "string" },
+          "groupBeneficialOwnerCountryOfControl": { "type": "string" },
+          "groupBeneficialOwnerCountryOfDomicile": { "type": "string" },
+          "groupBeneficialOwnerCountryOfDomicileCode": { "type": "string" },
+          "groupBeneficialOwnerCountryOfRegistration": { "type": "string" },
+          "hatchesDescriptiveNarrative": { "type": "string" },
+          "heatingCoilsInCargoTanks": { "type": "string" },
+          "heatingCoilsInSlopTanks": { "type": "string" },
+          "heatingCoilsMaterial": { "type": "string" },
+          "heightOfROROLanes": { "type": "string" },
+          "holdsDescriptiveNarrative": { "type": "string" },
+          "hullMaterial": { "type": "string" },
+          "hullMaterialCode": { "type": "string" },
+          "hullShapeCode": { "type": "string" },
+          "hullType": { "type": "string" },
+          "hullTypeCode": { "type": "string" },
+          "iceCapabilityDescriptiveNarrative": { "type": "string" },
+          "imoChemicalClassI": { "type": "string" },
+          "imoChemicalClassII": { "type": "string" },
+          "imoChemicalClassIII": { "type": "string" },
+          "inertGasSystemIGS": { "type": "string" },
+          "inmarsatNumberSatCommID": { "type": "string" },
+          "insulatedCapacity": { "type": "string" },
+          "keelLaidDate": { "type": "string" },
+          "keelLaidDateConversionInd": { "type": "string" },
+          "keelLaidDateConvertedDate": { "type": "string", "format": "date-time" },
+          "keelToMastHeight": { "type": "string" },
+          "lanesDoorsRampsNarrative": { "type": "string" },
+          "largestHatchBreadth": { "type": "string" },
+          "largestHatchLength": { "type": "string" },
+          "lastUpdateDate": { "type": "string", "format": "date-time" },
+          "lastUpdateDateString": { "type": "string" },
+          "launchDate": { "type": "string" },
+          "launchDateConversionInd": { "type": "string" },
+          "launchDateConvertedDate": { "type": "string", "format": "date-time" },
+          "leadShipInSeriesByIMONumber": { "type": "string" },
+          "legalAnnex4": { "type": "string" },
+          "legalAnnex5": { "type": "string" },
+          "legalDai": { "type": "string" },
+          "legalFlagDisputed": { "type": "string" },
+          "legalFlag": { "type": "string" },
+          "legalFlagHistory": { "type": "string" },
+          "legalOwnershipHistory": { "type": "string" },
+          "legalOverall": { "type": "string" },
+          "legalOwnershipFatf": { "type": "string" },
+          "legalOwnership": { "type": "string" },
+          "legalBeSanctionedCompany": { "type": "string" },
+          "legalEuSanctionedCompany": { "type": "string" },
+          "legalOwnerOfac": { "type": "string" },
+          "legalUnsanctionedCompany": { "type": "string" },
+          "legalOwnershipOwnerFatf": { "type": "string" },
+          "legalOwnershipOwner": { "type": "string" },
+          "legalPortCall1Y": { "type": "string" },
+          "legalPortCall3M": { "type": "string" },
+          "legalPortCall180D": { "type": "string" },
+          "legalEuSanctioned": { "type": "string" },
+          "legalShipNonSdn": { "type": "string" },
+          "legalShip": { "type": "string" },
+          "legalUnsanctioned": { "type": "string" },
+          "shipOverallComplianceStatus": { "type": "string" },
+          "shipANNEX4SuspectedSTSTransferswithNKorea": { "type": "string" },
+          "shipANNEX5SuspectedExportOfNKoreanCoal": { "type": "string" },
+          "shipDarkActivityIndicator": { "type": "string" },
+          "shipFlagDisputed": { "type": "string" },
+          "shipFlagSanctionedCountry": { "type": "string" },
+          "shipHistoricalFlagSanctionedCountry": { "type": "string" },
+          "shipOwnerHistoricalOFACSanctionedCountry": { "type": "string" },
+          "shipOwnerFATFJurisdiction": { "type": "string" },
+          "shipOwnerOFACSanctionedCountry": { "type": "string" },
+          "shipOwnerBESSanctionList": { "type": "string" },
+          "shipOwnerEUSanctionList": { "type": "string" },
+          "shipOwnerOFACSanctionList": { "type": "string" },
+          "shipOwnerUNSanctionList": { "type": "string" },
+          "shipOwnerParentFATFJurisdiction": { "type": "string" },
+          "shipOwnerParentOFACSanctionedCountry": { "type": "string" },
+          "shipSanctionedCountryPortCallLast12m": { "type": "string" },
+          "shipSanctionedCountryPortCallLast3m": { "type": "string" },
+          "shipSanctionedCountryPortCallLast6m": { "type": "string" },
+          "shipEUSanctionList": { "type": "string" },
+          "shipOFACNonSDNSanctionList": { "type": "string" },
+          "shipOFACSanctionList": { "type": "string" },
+          "shipUNSanctionList": { "type": "string" },
+          "shipOFACSSIList": { "type": "string" },
+          "shipOwnerCanadianSanctionList": { "type": "string" },
+          "shipOwnerAustralianSanctionList": { "type": "string" },
+          "shipUSTreasuryOFACAdvisoryList": { "type": "string" },
+          "shipSwissSanctionList": { "type": "string" },
+          "shipOwnerSwissSanctionList": { "type": "string" },
+          "shipSTSPartnerNonComplianceLast12m": { "type": "string" },
+          "shipSecurityLegalDisputeEventLast12m": { "type": "string" },
+          "shipDetailsNoLongerMaintained": { "type": "string" },
+          "shipBESSanctionList": { "type": "string" },
+          "shipOwnerParentCompanyNonCompliance": { "type": "string" },
+          "shipOwnerUAESanctionList": { "type": "string" },
+          "length": { "type": "string" },
+          "lengthBetweenPerpendicularsLBP": { "type": "string" },
+          "lengthOfROROLanes": { "type": "string" },
+          "lengthOverallLOA": { "type": "string" },
+          "lengthRegistered": { "type": "string" },
+          "lightDisplacementTonnage": { "type": "string" },
+          "linesPerSide": { "type": "string" },
+          "liquidCapacity": { "type": "string" },
+          "ihslRorIMOShipNo": { "type": "string" },
+          "mainEngineBore": { "type": "string" },
+          "mainEngineBuilder": { "type": "string" },
+          "mainEngineBuilderCode": { "type": "string" },
+          "mainEngineDesigner": { "type": "string" },
+          "mainEngineDesignerCode": { "type": "string" },
+          "mainEngineDesignerGroup": { "type": "string" },
+          "mainEngineDesignerGroupCode": { "type": "string" },
+          "mainEngineModel": { "type": "string" },
+          "mainEngineNumberOfCylinders": { "type": "string" },
+          "mainEngineRPM": { "type": "string" },
+          "mainEngineStrokeType": { "type": "string" },
+          "mainEngineType": { "type": "string" },
+          "manifoldHeightAtBallastCondition": { "type": "string" },
+          "manifoldHeightAtLadenCondition": { "type": "string" },
+          "maritimeMobileServiceIdentityMMSINumber": { "type": "string" },
+          "marpoL13GPhaseOutCategory": { "type": "string" },
+          "midPointManifoldAftBallast": { "type": "string" },
+          "midPointManifoldAftLaden": { "type": "string" },
+          "midPointManifoldAftLight": { "type": "string" },
+          "midPointManifoldForwardBallast": { "type": "string" },
+          "midPointManifoldForwardLaden": { "type": "string" },
+          "midPointManifoldForwardLight": { "type": "string" },
+          "multiLoadLines": { "type": "string" },
+          "netTonnage": { "type": "string" },
+          "newbuildPrice": { "type": "string" },
+          "newbuildPriceCurrency": { "type": "string" },
+          "newbuildPriceUSD": { "type": "string" },
+          "newbuildSubStatus": { "type": "string" },
+          "newbuildSubStatusNote": { "type": "string" },
+          "newconstructionDateConversionInd": { "type": "string" },
+          "newconstructionEntryDate": { "type": "string" },
+          "newConstructionEntryDateConverted": { "type": "string", "format": "date-time" },
+          "nonSpecificCargoCoatingTarEpoxy": { "type": "string" },
+          "nonSpecificSlopCoatingTarEpoxy": { "type": "string" },
+          "numberOfAllEngines": { "type": "string" },
+          "numberOfAuxiliaryEngines": { "type": "string" },
+          "numberOfCabins": { "type": "string" },
+          "numberOfCargoPumps": { "type": "string" },
+          "numberOfCargoTanks": { "type": "string" },
+          "numberOfCars": { "type": "string" },
+          "numberOfDecks": { "type": "string" },
+          "numberOfGenerators": { "type": "string" },
+          "numberOfHatches": { "type": "string" },
+          "numberOfHolds": { "type": "string" },
+          "numberOfMainEngines": { "type": "string" },
+          "numberOfPropulsionUnits": { "type": "string" },
+          "numberOfRamps": { "type": "string" },
+          "numberOfROROLanes": { "type": "string" },
+          "numberOfRORORamps": { "type": "string" },
+          "numberOfSlopTanks": { "type": "string" },
+          "numberOfTanks": { "type": "string" },
+          "numberOfThrusters": { "type": "string" },
+          "officialNumber": { "type": "string" },
+          "operator": { "type": "string" },
+          "operatorCompanyCode": { "type": "string" },
+          "operatorCountryOfControl": { "type": "string" },
+          "operatorCountryOfDomicileCode": { "type": "string" },
+          "operatorCountryOfDomicileName": { "type": "string" },
+          "operatorCountryOfRegistration": { "type": "string" },
+          "panamaCanalNetTonnagePCNT": { "type": "string" },
+          "pandIClub": { "type": "string" },
+          "pandIClubCode": { "type": "string" },
+          "parallelBodyLengthBallast": { "type": "string" },
+          "parallelBodyLengthLaden": { "type": "string" },
+          "parallelBodyLengthLight": { "type": "string" },
+          "passengerCapacity": { "type": "string" },
+          "passengersBerthed": { "type": "string" },
+          "permanentBallastCapacity": { "type": "string" },
+          "photoPresent": { "type": "string" },
+          "placeOfBreaking": { "type": "string" },
+          "portOfRegistryCode": { "type": "string" },
+          "portOfRegistry": { "type": "string" },
+          "portOfRegistryFullCode": { "type": "string" },
+          "powerBHPIHPSHPMax": { "type": "string" },
+          "powerBHPIHPSHPService": { "type": "string" },
+          "powerKWMax": { "type": "string" },
+          "powerKWService": { "type": "string" },
+          "primeMoverDescriptiveNarrative": { "type": "string" },
+          "primeMoverDescriptiveOverviewNarrative": { "type": "string" },
+          "propellerManufacturer": { "type": "string" },
+          "propellerType": { "type": "string" },
+          "propulsionType": { "type": "string" },
+          "propulsionTypeCode": { "type": "string" },
+          "pumpingCapacityM3": { "type": "string" },
+          "rampLocation": { "type": "string" },
+          "rampSWL": { "type": "string" },
+          "recyclingDateArrival": { "type": "string" },
+          "recyclingDateCommenced": { "type": "string" },
+          "recyclingCountry": { "type": "string" },
+          "recyclingCountryCode": { "type": "string" },
+          "recyclingPerLDTPrice": { "type": "string" },
+          "recyclingShipbreaker": { "type": "string" },
+          "recyclingTotalPrice": { "type": "string" },
+          "reeferPoints": { "type": "string" },
+          "registeredOwner": { "type": "string" },
+          "registeredOwnerCode": { "type": "string" },
+          "registeredOwnerCountryOfControl": { "type": "string" },
+          "registeredOwnerCountryOfDomicile": { "type": "string" },
+          "registeredOwnerCountryOfDomicileCode": { "type": "string" },
+          "registeredOwnerCountryOfRegistration": { "type": "string" },
+          "safetyManagementCertificateAuditor": { "type": "string" },
+          "safetyManagementCertificateConventionOrVol": { "type": "string" },
+          "safetyManagementCertificateDateExpires": { "type": "string" },
+          "safetyManagementCertificateDateIssued": { "type": "string" },
+          "safetyManagementCertificateDOCCompany": { "type": "string" },
+          "safetyManagementCertificateFlag": { "type": "string" },
+          "safetyManagementCertificateIssuer": { "type": "string" },
+          "safetyManagementCertificateOtherDescription": { "type": "string" },
+          "safetyManagementCertificateShipName": { "type": "string" },
+          "safetyManagementCertificateShipType": { "type": "string" },
+          "safetyManagementCertificateSource": { "type": "string" },
+          "saleDate": { "type": "string" },
+          "salePriceUSD": { "type": "string" },
+          "sbtplsbtProtectedLocation": { "type": "string" },
+          "segregatedBallastCapacity": { "type": "string" },
+          "segregatedBallastTanks": { "type": "string" },
+          "shipManager": { "type": "string" },
+          "shipManagerCompanyCode": { "type": "string" },
+          "shipManagerCountryOfControl": { "type": "string" },
+          "shipManagerCountryOfDomicileName": { "type": "string" },
+          "shipManagerCountryOfDomicileCode": { "type": "string" },
+          "shipManagerCountryOfRegistration": { "type": "string" },
+          "shipName": { "type": "string" },
+          "shipStatus": { "type": "string" },
+          "shipStatusCode": { "type": "string" },
+          "shipStatusEffectiveDate": { "type": "string" },
+          "shipbuilder": { "type": "string" },
+          "shipbuilderCompanyCode": { "type": "string" },
+          "shipbuilderFullStyle": { "type": "string" },
+          "shipbuilderFullStyleSBR": { "type": "string" },
+          "shipbuilderSubContractor": { "type": "string" },
+          "shipbuilderSubContractorCode": { "type": "string" },
+          "shipbuilderSubContractorShipyardYardHullNo": { "type": "string" },
+          "shiptypeGroup": { "type": "string" },
+          "shiptypeLevel2": { "type": "string" },
+          "shiptypeLevel3": { "type": "string" },
+          "shiptypeLevel4": { "type": "string" },
+          "shiptypeLevel5": { "type": "string" },
+          "shiptypeLevel5HullType": { "type": "string" },
+          "shiptypeLevel5SubGroup": { "type": "string" },
+          "shiptypeLevel5SubType": { "type": "string" },
+          "singlePointMooring": { "type": "string" },
+          "slopTankCapacity": { "type": "string" },
+          "slopTankCoatings": { "type": "string" },
+          "specialTanksDescriptiveNarrative": { "type": "string" },
+          "specialistTankerNarrative": { "type": "string" },
+          "speed": { "type": "string" },
+          "speedMax": { "type": "string" },
+          "speedService": { "type": "string" },
+          "standardShipDesign": { "type": "string" },
+          "statCode5": { "type": "string" },
+          "sternDischargeFacility": { "type": "string" },
+          "sternLoadingFacility": { "type": "string" },
+          "suezCanalNetTonnageSCNT": { "type": "string" },
+          "tankCoatingsNarrative": { "type": "string" },
+          "tanksDescriptiveNarrative": { "type": "string" },
+          "technicalManager": { "type": "string" },
+          "technicalManagerCode": { "type": "string" },
+          "technicalManagerCountryOfControl": { "type": "string" },
+          "technicalManagerCountryOfDomicile": { "type": "string" },
+          "technicalManagerCountryOfDomicileCode": { "type": "string" },
+          "technicalManagerCountryOfRegistration": { "type": "string" },
+          "tempMaximum": { "type": "string" },
+          "tempMinimum": { "type": "string" },
+          "teu": { "type": "string" },
+          "teuCapacity14THomogenous": { "type": "string" },
+          "thrustersDescriptiveNarrative": { "type": "string" },
+          "tonnageEffectiveDate": { "type": "string" },
+          "tonnageSystem69Convention": { "type": "string" },
+          "tonnesPerCentimetreImmersionTPCI": { "type": "string" },
+          "totalBunkerCapacity": { "type": "string" },
+          "totalHorsepowerOfAuxiliaryGenerators": { "type": "string" },
+          "totalHorsepowerOfMainEngines": { "type": "string" },
+          "totalHorsepowerOfMainGenerators": { "type": "string" },
+          "totalKilowattsOfMainEngines": { "type": "string" },
+          "totalPowerOfAllEngines": { "type": "string" },
+          "totalPowerOfAuxiliaryEngines": { "type": "string" },
+          "tveExpiryDate": { "type": "string" },
+          "vapourRecoverySystem": { "type": "string" },
+          "widthOfROROLanes": { "type": "string" },
+          "yardNumber": { "type": "string" },
+          "yearOfBuild": { "type": "string" },
+          "numberofMotors": { "type": "string" },
+          "totalPowerofMotors": { "type": "string" },
+          "mainEngineTypeCode": { "type": "string" },
+          "cargoOtherType": { "type": "string" },
+          "cargoOtherCapacity": { "type": "string" },
+          "nuclearPowerIndicator": { "type": "string" },
+          "auxPropulsionIndicator": { "type": "string" },
+          "mainEngineReEngineIndicator": { "type": "string" },
+          "mainEngineTypeOfInstallation": { "type": "string" },
+          "mainEngineTypeOfInstallationDecode": { "type": "string" },
+          "eedi": { "type": "string" },
+          "mainEngineStrokeCycle": { "type": "string" },
+          "eexi": { "type": "string" },
+          "alternativeDraught": { "type": "string" },
+          "alternativeDWT": { "type": "string" },
+          "additionalInformation": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AdditionalInformation" }
+          },
+          "arrangements": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Arrangement" }
+          },
+          "auxEngine": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AuxEngine" }
+          },
+          "auxGenerator": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AuxGenerator" }
+          },
+          "boiler": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Boiler" }
+          },
+          "boilersExpanded": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/BoilerExpanded" }
+          },
+          "builderAddress": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/BuilderAddress" }
+          },
+          "capacities": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Capacity" }
+          },
+          "cargoPump": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CargoPump" }
+          },
+          "classCurrent": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassRecord" }
+          },
+          "classHistory": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassHistoryRecord" }
+          },
+          "classHistorySince2000": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassHistoryRecord" }
+          },
+          "classWithdrawn": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassWithdrawn" }
+          },
+          "crewList": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CrewList" }
+          },
+          "companyCompliance": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CompanyCompliance" }
+          },
+          "companyComplianceDetails": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CompanyComplianceDetails" }
+          },
+          "company": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Company" }
+          },
+          "companyDetailsAndParent": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CompanyDetailsAndParent" }
+          },
+          "companyVesselRelationships": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CompanyVesselRelationship" }
+          },
+          "darkActivityConfirmed": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DarkActivity" }
+          },
+          "defect": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Defect" }
+          },
+          "destination": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Destination" }
+          },
+          "docHistory": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DocHistory" }
+          },
+          "docHistorySince2000": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DocHistory" }
+          },
+          "engineBuilder": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/EngineBuilder" }
+          },
+          "fixture": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Fixture" }
+          },
+          "fixture3Months": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Fixture" }
+          },
+          "flagHistory": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/FlagHistory" }
+          },
+          "flagHistorySince2000": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/FlagHistory" }
+          },
+          "inspection": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Inspection" }
+          },
+          "lastRecordedPortOfCall": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LastRecordedPortOfCall" }
+          },
+          "liftingGear": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LiftingGear" }
+          },
+          "mainEngine": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MainEngine" }
+          },
+          "mainGenerator": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MainGenerator" }
+          },
+          "nameHistory": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/NameHistory" }
+          },
+          "nameHistorySince2000": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/NameHistory" }
+          },
+          "ownerHistory": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OwnerHistory" }
+          },
+          "ownerHistorySince2000": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OwnerHistory" }
+          },
+          "propellers": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Propeller" }
+          },
+          "recentTerrestrialPositions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RecentPosition" }
+          },
+          "sales": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Sale" }
+          },
+          "scrubberDetails": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ScrubberDetails" }
+          },
+          "shipCertificates": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ShipCertificate" }
+          },
+          "thrusters": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Thruster" }
+          },
+          "batteries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Battery" }
+          },
+          "ballastWaterManagement": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/BallastWaterManagement" }
+          },
+          "bareboatCharterCountryControlCodeISO2": { "type": "string" },
+          "bareboatCharterCountryDomicileCodeISO2": { "type": "string" },
+          "bareboatCharterCountryRegistrationCodeISO2": { "type": "string" },
+          "docCompanyCountryDomicileCodeISO2": { "type": "string" },
+          "docCountryControlCodeISO2": { "type": "string" },
+          "docCountryRegistrationCodeISO2": { "type": "string" },
+          "groupOwnerCountryControlCodeISO2": { "type": "string" },
+          "groupOwnerCountryDomicileCodeISO2": { "type": "string" },
+          "groupOwnerCountryRegistrationCodeISO2": { "type": "string" },
+          "operatorCountryControlCodeISO2": { "type": "string" },
+          "operatorCountryDomicileCodeISO2": { "type": "string" },
+          "operatorCountryRegistrationCodeISO2": { "type": "string" },
+          "registeredOwnerCountryControlCodeISO2": { "type": "string" },
+          "registeredOwnerCountryDomicileCodeISO2": { "type": "string" },
+          "registeredOwnerCountryRegistrationCodeISO2": { "type": "string" },
+          "shipManagerCountryControlCodeISO2": { "type": "string" },
+          "shipManagerCountryDomicileCodeISO2": { "type": "string" },
+          "shipManagerCountryRegistrationCodeISO2": { "type": "string" },
+          "technicalManagerCountryControlCodeISO2": { "type": "string" },
+          "technicalManagerCountryDomicileCodeISO2": { "type": "string" },
+          "technicalManagerCountryRegistrationCodeISO2": { "type": "string" }
+        }
+      },
+      "ShipDataResponse": {
+        "type": "object",
+        "properties": {
+          "apsStatus": {
+            "$ref": "#/components/schemas/ApsStatus"
+          },
+          "shipCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "apsShipDetail": {
+            "$ref": "#/components/schemas/ApsShipDetail"
+          }
+        }
+      }
+    }
+  }
+}

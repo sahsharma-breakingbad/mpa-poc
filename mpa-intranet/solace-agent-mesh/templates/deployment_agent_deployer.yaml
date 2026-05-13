@@ -1,0 +1,104 @@
+{{- if not .Values.sam.communityMode }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sam.fullname" . }}-agent-deployer
+  labels:
+    {{- include "sam.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-deployer
+  {{- include "sam.annotations" . | nindent 2 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sam.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: agent-deployer
+  strategy:
+    {{- if eq .Values.samDeployment.rollout.strategy "RollingUpdate" }}
+    {{- with .Values.samDeployment.rollout.rollingUpdate }}
+    rollingUpdate:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- end }}
+    type: {{ .Values.samDeployment.rollout.strategy }}
+  template:
+    metadata:
+      annotations:
+        {{- include "sam.podAnnotations" . | nindent 8 }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap_agent_deployer.yaml") . | sha256sum }}
+        checksum/env: {{ include (print $.Template.BasePath "/secret_sam_env.yaml") . | sha256sum }}
+      labels:
+        {{- include "sam.selectorLabels" . | nindent 8 }}
+        {{- include "sam.podLabels" . | nindent 8 }}
+        app.kubernetes.io/component: agent-deployer
+    spec:
+      serviceAccountName: {{ .Values.samDeployment.serviceAccount.name }}
+      {{- if .Values.samDeployment.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.samDeployment.podSecurityContext | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent-deployer
+          ports:
+            - name: health
+              containerPort: 8089
+          envFrom:
+            - configMapRef:
+                name: {{ include "sam.fullname" . }}-agent-deployer-config
+            - secretRef:
+                name: {{ include "sam.fullname" . }}-environment
+          # Inject specific keys from existing secrets (extraSecretEnvironmentVars)
+          {{- if .Values.extraSecretEnvironmentVars }}
+          env:
+          {{- include "sam.extraSecretEnvironmentVars" .Values | nindent 12 }}
+          {{- end }}
+          {{- if .Values.samDeployment.securityContext }}
+          securityContext:
+            {{- toYaml .Values.samDeployment.securityContext | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.samDeployment.agentDeployer.image.repository }}:{{ .Values.samDeployment.agentDeployer.image.tag }}"
+          imagePullPolicy: {{ .Values.samDeployment.agentDeployer.image.pullPolicy }}
+          {{- if .Values.samDeployment.agentDeployer.localCharts.enabled }}
+          volumeMounts:
+            - name: local-charts
+              mountPath: {{ .Values.samDeployment.agentDeployer.localCharts.mountPath }}
+              readOnly: true
+          {{- end }}
+          {{- if .Values.samDeployment.resources }}
+          resources:
+            {{- toYaml .Values.samDeployment.resources.agentDeployer | nindent 12 }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /startup
+              port: 8089
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8089
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8089
+            periodSeconds: 10
+            failureThreshold: 3
+      {{- with .Values.samDeployment.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.samDeployment.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.samDeployment.agentDeployer.localCharts.enabled }}
+      volumes:
+        - name: local-charts
+          configMap:
+            name: {{ include "sam.fullname" . }}-local-charts
+      {{- end }}
+{{- end }}

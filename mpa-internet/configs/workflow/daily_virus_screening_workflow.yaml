@@ -1,0 +1,541 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: daily_virus_screening_workflow.log
+
+!include ../shared_config.yaml
+
+# ── Shared RAG pipeline config (reused by agents that need Qdrant access) ──
+_rag_pipeline_config: &rag_pipeline_config
+  scanner:
+    batch: true
+    use_memory_storage: true
+    sources:
+      - type: filesystem
+        directories: ["${DOCUMENTS_PATH}"]
+        filters:
+          file_formats: [".md"]
+          max_file_size: 10240
+        schedule:
+          interval: 60
+  splitter:
+    default:
+      method: MarkdownSplitter
+      params:
+        chunk_size: 2048
+        chunk_overlap: 400
+        headers_to_split_on: ["#", "##", "###"]
+        strip_headers: false
+  embedding:
+    embedder_type: "openai"
+    embedder_params:
+      model: "${OPENAI_EMBEDDING_MODEL}"
+      api_key: "${OPENAI_EMBEDDING_API_KEY}"
+      api_base: "${OPENAI_EMBEDDING_API_ENDPOINT}"
+      batch_size: 128
+    normalize_embeddings: true
+  vector_db:
+    db_type: "qdrant"
+    db_params:
+      url: "${QDRANT_URL}"
+      api_key: "${QDRANT_API_KEY}"
+      collection_name: "${QDRANT_COLLECTION}"
+      embedding_dimension: ${QDRANT_EMBEDDING_DIMENSION}
+      hnsw_config:
+        m: 32
+        ef_construct: 200
+      on_disk: false
+  llm:
+    load_balancer:
+      - model_name: "gpt-4o"
+        litellm_params:
+          model: ${LLM_SERVICE_GENERAL_MODEL_NAME}
+          api_key: ${LLM_SERVICE_API_KEY}
+          api_base: ${LLM_SERVICE_ENDPOINT}
+          temperature: 0.01
+          max_tokens: 4096
+          timeout: 30
+  retrieval:
+    top_k: 10
+
+apps:
+  # ============================================================================
+  # SUPPORTING AGENTS
+  # These agents are used by the Daily Virus Screening workflow
+  # ============================================================================
+
+  # ----------------------------------------------------------------------------
+  # AGENT 1: Virus Outbreak Scanner
+  # Searches the internet for active virus outbreaks affecting maritime ports
+  # Runs in PARALLEL with Agent 2 (no dependencies)
+  # ----------------------------------------------------------------------------
+  - name: virus_outbreak_scanner_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "VirusOutbreakScanner"
+      model: *planning_model
+      max_llm_calls: 10
+
+      instruction: |
+        You are a Daily Virus Health Risk Intelligence Analyst for MPA (Maritime and Port Authority).
+
+        Your task is to fetch and analyze ACTIVE virus outbreaks from the last 15 days
+        that impact maritime ports and seaport operations.
+
+        == VIRUSES TO SCREEN ==
+        Focus on these virus types:
+        - COVID-19 variants (XEC, KP.3, JN.1, or any new WHO-designated variants)
+        - Nipah Virus
+        - Hantavirus
+        - Any other WHO-flagged viruses affecting port regions
+
+        == FOR EACH ACTIVE VIRUS FOUND, GATHER ==
+        1. Virus name + variant/strain (e.g., "Nipah Virus - Bangladesh 2026 cluster")
+        2. WHO risk level or advisory status (e.g., Grade 2 Emergency, PHEIC, Watch Level)
+        3. High-risk ports affected (seaports/river ports in the outbreak zone)
+        4. Active quarantine or travel restrictions for maritime operations (e.g., crew screening, vessel holds, port closures)
+
+        == HOW TO GATHER DATA ==
+        Use the web tool to directly fetch these URLs and extract outbreak information:
+        1. WHO Disease Outbreak News: https://www.who.int/emergencies/disease-outbreak-news
+        2. CDC Travel Health Notices: https://wwwnc.cdc.gov/travel/notices
+        3. ECDC Threats Report: https://www.ecdc.europa.eu/en/threats-and-outbreaks/reports-and-data/weekly-threats
+
+        For each URL, use the HTTP GET action to fetch the page content, then parse the results
+        for active outbreaks. Follow links to individual outbreak reports if needed for details.
+
+        IMPORTANT:
+        - Only include outbreaks that are CURRENTLY ACTIVE (confirmed cases or ongoing transmission within the last 15 days).
+        - Do NOT include historical or contained outbreaks.
+        - Be precise with port names — use standard port names recognized by maritime authorities (UPPERCASE).
+        - Only include ports near active outbreak zones that pose a genuine risk to maritime operations.
+
+        Return your findings as a JSON response:
+        {
+          "viruses": [
+            {
+              "virus_name": "<name>",
+              "strain_variant": "<variant>",
+              "who_risk_level": "<risk level>",
+              "affected_ports": [
+                {"port_name": "<PORT_NAME>", "country": "<COUNTRY>", "restrictions": "<details>"}
+              ],
+              "quarantine_restrictions": "<summary of maritime restrictions>",
+              "status": "active"
+            }
+          ],
+          "total_viruses_found": <number>,
+          "scan_period": "last 15 days",
+          "data_sources": ["<list of sources consulted>"]
+        }
+
+        Do NOT use result:artifact blocks — return the JSON directly in your response text.
+
+      tools:
+        - tool_type: builtin-group
+          group_name: "web"
+
+      input_schema:
+        type: object
+        properties: {}
+        required: []
+
+      output_schema:
+        type: object
+        properties:
+          viruses:
+            type: array
+            items:
+              type: object
+              properties:
+                virus_name: {type: string}
+                strain_variant: {type: string}
+                who_risk_level: {type: string}
+                affected_ports:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      port_name: {type: string}
+                      country: {type: string}
+                      restrictions: {type: string}
+                quarantine_restrictions: {type: string}
+                status: {type: string}
+          total_viruses_found: {type: integer}
+          scan_period: {type: string}
+          data_sources: {type: array, items: {type: string}}
+        required: [viruses, total_viruses_found]
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card:
+        description: "INTERNAL workflow agent that searches the internet for active virus outbreaks affecting maritime ports. Only used by DailyVirusScreeningWorkflow. NOT for PAN screening, ship compliance, or direct user queries."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "scan_virus_outbreaks"
+            name: "Internal Virus Outbreak Scanner"
+            description: "INTERNAL USE ONLY. Searches internet for active virus outbreaks (COVID, Nipah, Hantavirus) affecting maritime ports. Called exclusively by DailyVirusScreeningWorkflow."
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ----------------------------------------------------------------------------
+  # AGENT 2: Port List Retriever
+  # Fetches existing high-risk ports from Qdrant vector DB
+  # Runs in PARALLEL with Agent 1 (no dependencies)
+  # ----------------------------------------------------------------------------
+  - name: port_list_retriever_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "PortListRetriever"
+      model: *planning_model
+      max_llm_calls: 3
+
+      instruction: |
+        You are the Port List Retriever agent for the Daily Virus Screening workflow.
+
+        Your ONLY task is to fetch the current high-risk port list from the MPA knowledge base (Qdrant vector DB).
+
+        == STRICT RULES ==
+        - Make EXACTLY ONE call to search_documents with query: "High-Risk Ports and Countries"
+        - Do NOT make any additional search calls. One call is sufficient.
+        - Do NOT search for specific viruses, regions, or other terms separately.
+        - Parse the results from that single call and return the port list.
+
+        == STEPS ==
+        1. Call search_documents ONCE with query "High-Risk Ports and Countries"
+        2. Parse the returned markdown table to extract port names, countries, and virus types.
+        3. Return the results immediately as JSON. Do NOT make further searches.
+
+        Return your findings as a JSON response:
+        {
+          "existing_ports": [
+            {"port_name": "<PORT_NAME>", "country": "<COUNTRY>", "virus_type": "<VIRUS>"}
+          ],
+          "total_existing_ports": <number>,
+          "retrieval_status": "success" or "failed",
+          "raw_content": "<the raw markdown content retrieved from Qdrant>"
+        }
+
+        If no ports are found in the knowledge base, return an empty list with total_existing_ports: 0.
+        Do NOT use result:artifact blocks — return the JSON directly in your response text.
+
+      agent_init_function:
+        module: "sam_rag.lifecycle"
+        name: "initialize_rag_agent"
+        config:
+          <<: *rag_pipeline_config
+
+      agent_cleanup_function:
+        module: "sam_rag.lifecycle"
+        name: "cleanup_rag_agent_resources"
+
+      tools:
+        - tool_type: python
+          component_module: "sam_rag.tools"
+          function_name: "search_documents"
+          required_scopes: ["rag:search:read"]
+
+      input_schema:
+        type: object
+        properties: {}
+        required: []
+
+      output_schema:
+        type: object
+        properties:
+          existing_ports:
+            type: array
+            items:
+              type: object
+              properties:
+                port_name: {type: string}
+                country: {type: string}
+                virus_type: {type: string}
+          total_existing_ports: {type: integer}
+          retrieval_status: {type: string, enum: ["success", "failed"]}
+          raw_content: {type: string}
+        required: [existing_ports, total_existing_ports, retrieval_status]
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card:
+        description: "INTERNAL workflow agent that retrieves the current high-risk port list from Qdrant. Only used by DailyVirusScreeningWorkflow. NOT for PAN screening, ship compliance, or direct user queries."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "retrieve_port_list"
+            name: "Internal Port List Retriever"
+            description: "INTERNAL USE ONLY. Fetches existing high-risk ports from Qdrant vector DB. Called exclusively by DailyVirusScreeningWorkflow."
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ----------------------------------------------------------------------------
+  # AGENT 3: Port Reconciler
+  # Compares internet research vs existing ports, reconciles, and updates Qdrant
+  # Runs AFTER Agents 1 and 2 complete (depends_on both)
+  # ----------------------------------------------------------------------------
+  - name: port_reconciler_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "PortReconciler"
+      model: *planning_model
+      max_llm_calls: 5
+
+      instruction: |
+        You are the Port Reconciler agent for the Daily Virus Screening workflow.
+
+        You receive TWO inputs:
+        1. **Internet research results** from the VirusOutbreakScanner — active virus outbreaks and their affected ports
+        2. **Existing port list** from the PortListRetriever — current high-risk ports stored in Qdrant
+
+        == RECONCILIATION RULES ==
+        Compare the two lists and apply these rules:
+        - **KEEP**: Ports from the existing list that still have an active virus threat (confirmed by internet research)
+        - **REMOVE**: Ports from the existing list where the virus is no longer active (outbreak contained, no cases in 15+ days, not found in internet research)
+        - **ADD**: New ports identified from current outbreaks (internet research) that are NOT yet in the existing list
+
+        == UPDATE QDRANT ==
+        After reconciliation, call reingest_content_to_qdrant with the final reconciled port list.
+
+        Format the content parameter as a markdown document with this EXACT structure:
+        # High-Risk Ports and Countries\n\nThis document contains the list of high-risk ports and their associated countries. Vessels that have visited these ports are flagged for additional review under the PAN (Pre-Arrival Notification) system.\n\n## High-Risk Port List\n\n| Port/Location | Country | Virus Type |\n|---------------|---------|------------|\n| <PORT_NAME> | <COUNTRY> | <VIRUS_TYPE> |\n... (one row per port)\n\n## Vessel High-Risk Port Metrics\n\n| Rule | Score |\n|------|-------|\n| 1 High Risk Port Visited | 50 |\n| More than 1 High Risk Port Visited | 80 |
+
+        Use these parameters:
+        - document_type: "high-risk-ports_v1"
+        - source_filename: "high-risk-ports_v1.md"
+
+        == RETURN RESULTS ==
+        Return a JSON response with:
+        {
+          "scan_date": "<today's date>",
+          "action_taken": "qdrant_updated" or "no_changes",
+          "viruses_screened": ["<list of viruses checked>"],
+          "ports_added": ["<list of newly added ports>"],
+          "ports_added_count": <number>,
+          "ports_removed": ["<list of removed ports>"],
+          "ports_removed_count": <number>,
+          "ports_retained": <number of ports kept>,
+          "total_active_ports": <final total>,
+          "screening_summary": "<brief summary of findings>",
+          "sync_status": "success" or "failed",
+          "message": "<human-readable summary of changes>"
+        }
+
+        IMPORTANT:
+        - Do NOT use result:artifact blocks — return the JSON directly in your response text.
+        - Be precise with port names — use standard UPPERCASE port names.
+        - If internet research found NO active outbreaks, remove ALL ports and set total_active_ports to 0.
+        - If the existing list is empty and internet research found outbreaks, add all new ports.
+
+      agent_init_function:
+        module: "sam_rag.lifecycle"
+        name: "initialize_rag_agent"
+        config:
+          <<: *rag_pipeline_config
+
+      agent_cleanup_function:
+        module: "sam_rag.lifecycle"
+        name: "cleanup_rag_agent_resources"
+
+      tools:
+        - tool_type: python
+          component_module: "qdrant_sync_tools"
+          function_name: "reingest_content_to_qdrant"
+          description: "Delete old Qdrant entries and re-upload new content directly to Qdrant. Does NOT write to disk."
+
+      input_schema:
+        type: object
+        properties:
+          viruses:
+            type: array
+            description: "Active virus outbreaks from internet research"
+          total_viruses_found: {type: integer}
+          existing_ports:
+            type: array
+            description: "Current high-risk ports from Qdrant"
+          total_existing_ports: {type: integer}
+        required: [viruses, existing_ports]
+
+      output_schema:
+        type: object
+        properties:
+          scan_date: {type: string}
+          action_taken: {type: string, enum: ["qdrant_updated", "no_changes", "error"]}
+          viruses_screened: {type: array, items: {type: string}}
+          ports_added: {type: array, items: {type: string}}
+          ports_added_count: {type: integer}
+          ports_removed: {type: array, items: {type: string}}
+          ports_removed_count: {type: integer}
+          ports_retained: {type: integer}
+          total_active_ports: {type: integer}
+          screening_summary: {type: string}
+          sync_status: {type: string}
+          message: {type: string}
+        required: [scan_date, action_taken, viruses_screened, total_active_ports, sync_status, message]
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card:
+        description: "INTERNAL workflow agent that reconciles virus outbreak research against existing port lists and updates Qdrant. Only used by DailyVirusScreeningWorkflow. NOT for PAN screening, ship compliance, or direct user queries."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "reconcile_ports"
+            name: "Internal Port Reconciler"
+            description: "INTERNAL USE ONLY. Reconciles internet research with existing Qdrant port list and updates the KB. Called exclusively by DailyVirusScreeningWorkflow."
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}
+
+  # ══════════════════════════════════════════════════════════════════════
+  # WORKFLOW: Daily Virus Screening & Port List Update
+  # 3-node pipeline: scan outbreaks (parallel) + fetch ports (parallel) → reconcile & update
+  # Does NOT modify files on disk
+  # ══════════════════════════════════════════════════════════════════════
+  - name: daily_virus_screening_workflow
+    app_base_path: .
+    app_module: solace_agent_mesh.workflow.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      name: "DailyVirusScreeningWorkflow"
+      display_name: "Daily Virus Health Risk Screening"
+
+      workflow:
+        version: "1.0.0"
+        description: |
+          Daily screening workflow for active virus outbreaks impacting maritime ports.
+
+          Pipeline:
+          1. AGENT NODE (parallel): Scan internet for active outbreaks (COVID, Nipah, Hantavirus)
+          2. AGENT NODE (parallel): Fetch existing high-risk ports from Qdrant vector DB
+          3. AGENT NODE (sequential): Reconcile findings — keep active, remove contained, add new — then update Qdrant
+
+          Focuses on outbreaks from the last 15 days affecting seaports and shipping.
+          Does NOT modify files on disk (high-risk-ports_v1.md stays untouched).
+
+        input_schema:
+          type: object
+          properties:
+            scan_date:
+              type: string
+              default: "today"
+              description: "Date for the screening run. Use 'today' for the current date."
+
+        output_schema:
+          type: object
+          properties:
+            scan_date: {type: string}
+            action_taken: {type: string}
+            viruses_screened: {type: array, items: {type: string}}
+            ports_added: {type: array, items: {type: string}}
+            ports_added_count: {type: integer}
+            ports_removed: {type: array, items: {type: string}}
+            ports_removed_count: {type: integer}
+            ports_retained: {type: integer}
+            total_active_ports: {type: integer}
+            screening_summary: {type: string}
+            sync_status: {type: string}
+            message: {type: string}
+          required: [scan_date, action_taken, viruses_screened, total_active_ports, sync_status, message]
+
+        nodes:
+          # ====================================================================
+          # STEP 1: AGENT NODE - Scan internet for active virus outbreaks
+          # Runs in PARALLEL with Step 2 (no dependencies)
+          # ====================================================================
+          - id: scan_outbreaks
+            type: agent
+            agent_name: "VirusOutbreakScanner"
+            instruction: |
+              Search the internet for ACTIVE virus outbreaks from the last 15 days
+              that impact maritime ports. Focus on COVID-19 variants, Nipah Virus,
+              Hantavirus, and any WHO-flagged viruses affecting port regions.
+              Return structured findings with virus details, affected ports, and restrictions.
+            input: {}
+
+          # ====================================================================
+          # STEP 2: AGENT NODE - Fetch existing high-risk ports from Qdrant
+          # Runs in PARALLEL with Step 1 (no dependencies)
+          # ====================================================================
+          - id: fetch_existing_ports
+            type: agent
+            agent_name: "PortListRetriever"
+            instruction: |
+              Fetch the current high-risk port list from the Qdrant knowledge base.
+              Use search_documents to retrieve the existing port data.
+              Return the structured list of ports currently tracked.
+            input: {}
+
+          # ====================================================================
+          # STEP 3: AGENT NODE - Reconcile and update Qdrant
+          # Runs AFTER Steps 1 and 2 complete (depends on both)
+          # ====================================================================
+          - id: reconcile_and_update
+            type: agent
+            agent_name: "PortReconciler"
+            depends_on: [scan_outbreaks, fetch_existing_ports]
+            instruction: |
+              Reconcile the internet research findings with the existing port list:
+              - KEEP ports that still have active virus threats
+              - REMOVE ports where the virus is no longer active
+              - ADD new ports identified from current outbreaks
+              Then update Qdrant with the reconciled port list using reingest_content_to_qdrant.
+            input:
+              viruses: "{{scan_outbreaks.output.viruses}}"
+              total_viruses_found: "{{scan_outbreaks.output.total_viruses_found}}"
+              existing_ports: "{{fetch_existing_ports.output.existing_ports}}"
+              total_existing_ports: "{{fetch_existing_ports.output.total_existing_ports}}"
+
+        output_mapping:
+          scan_date: "{{workflow.input.scan_date}}"
+          action_taken: "{{reconcile_and_update.output.action_taken}}"
+          viruses_screened: "{{reconcile_and_update.output.viruses_screened}}"
+          ports_added: "{{reconcile_and_update.output.ports_added}}"
+          ports_added_count: "{{reconcile_and_update.output.ports_added_count}}"
+          ports_removed: "{{reconcile_and_update.output.ports_removed}}"
+          ports_removed_count: "{{reconcile_and_update.output.ports_removed_count}}"
+          ports_retained: "{{reconcile_and_update.output.ports_retained}}"
+          total_active_ports: "{{reconcile_and_update.output.total_active_ports}}"
+          screening_summary: "{{reconcile_and_update.output.screening_summary}}"
+          sync_status: "{{reconcile_and_update.output.sync_status}}"
+          message: "{{reconcile_and_update.output.message}}"
+
+        skills:
+          - id: "daily_virus_screening"
+            name: "Daily Virus Health Risk Screening"
+            description: "Screen for active virus outbreaks (COVID variants, Nipah, Hantavirus) affecting maritime ports. Checks internet sources for outbreaks from the last 15 days, reconciles with the existing high-risk port list in the knowledge base, and updates Qdrant — keeping active ports, removing resolved ones, and adding new high-risk ports."
+            tags: ["virus", "screening", "daily", "outbreak", "maritime", "ports", "health-risk", "covid", "nipah", "hantavirus"]
+
+      session_service:
+        <<: *default_session_service
+      artifact_service:
+        <<: *default_artifact_service
+      agent_card_publishing: {interval_seconds: 10}
+      agent_discovery: {enabled: false}

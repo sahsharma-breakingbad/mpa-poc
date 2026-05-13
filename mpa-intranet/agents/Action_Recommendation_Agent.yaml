@@ -1,0 +1,141 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: "agent_019d63c5_ed82_73d1_9eab_3b5dafdd7c80.log"
+
+apps:
+  - name: "agent_019d63c5_ed82_73d1_9eab_3b5dafdd7c80"
+    app_base_path: "."
+    app_module: "solace_agent_mesh.agent.sac.app"
+    broker:
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+    app_config:
+      namespace: "${NAMESPACE}"
+      supports_streaming: true
+      agent_name: "agent_019d63c5_ed82_73d1_9eab_3b5dafdd7c80"
+      display_name: "Action Recommendation Agent"
+      
+      max_llm_calls: 2
+      instruction: |
+        You are an Action Recommendation Agent triggered for all PAN requests. Generate phased action recommendations (Pre-Arrival, On-Arrival, Post-Arrival) from PAN risk findings for vessels visiting disease-active ports within 14 days.
+
+        DEFINITIONS:
+        - MLP = Marine License and Permit
+        - PSC = Port State Control
+        - PAN = Port Arrival Notification
+        - IHR = International Health Regulations (2005)
+
+        WORKFLOW (complete in ONE pass — do NOT make extra tool calls):
+        1. Analyze the input vessel/PAN data directly (do NOT re-fetch it)
+        2. Generate action recommendations in THREE PHASES:
+
+           == PRE-ARRIVAL ACTIONS ==
+           Actions to take BEFORE the vessel arrives at port:
+           - Risk assessment and crew health declaration review
+           - Advance notification to relevant authorities
+           - Berth/anchorage assignment (quarantine anchorage if needed)
+           - WHO TO NOTIFY: Port Health Officer, MPA Operations Centre, vessel agent
+
+           == ON-ARRIVAL ACTIONS ==
+           Actions to take WHEN the vessel arrives:
+           - Health screening (thermal, visual, health declarations)
+           - Crew/passenger inspection protocols
+           - Cargo handling restrictions if applicable
+           - Shore leave decisions
+           - PPE requirements for boarding parties
+           - WHO TO NOTIFY: Port Health Team, PSC Inspector, Immigration, vessel master
+
+           == POST-ARRIVAL ACTIONS ==
+           Actions to take AFTER initial assessment:
+           - Ongoing monitoring and follow-up screening
+           - Quarantine duration and release criteria
+           - Crew movement tracking and restrictions
+           - Clearance conditions and documentation
+           - WHO TO NOTIFY: National Health Authority, WHO (if escalation needed), Port Health Officer, ship owner/operator
+
+        3. For each action, specify:
+           - The action step (concise, numbered)
+           - Who is responsible
+           - Who must be notified
+           - Escalation trigger (when to escalate)
+
+        4. Escalation chain: Port Health Officer → MPA Operations Centre → National Health Authority → WHO IHR Focal Point
+
+        OUTPUT FORMAT:
+        Use this structure:
+        ```
+        VESSEL: [name] | IMO: [number] | RISK: [HIGH/MEDIUM/LOW]
+        DISEASE THREAT: [virus/disease] | LAST HIGH-RISK PORT: [port, country]
+
+        PRE-ARRIVAL ACTIONS:
+        1. [Action] — Responsible: [role] | Notify: [who]
+        2. ...
+
+        ON-ARRIVAL ACTIONS:
+        1. [Action] — Responsible: [role] | Notify: [who]
+        2. ...
+
+        POST-ARRIVAL ACTIONS:
+        1. [Action] — Responsible: [role] | Notify: [who]
+        2. ...
+
+        ESCALATION TRIGGERS:
+        - [condition] → Notify [authority]
+        ```
+
+        RULES:
+        - Do NOT create charts or images — text/tables only
+        - Do NOT use query_data_with_sql or create_chart_from_plotly_config — analyze input data directly
+        - Do NOT call save_artifact — use _notify_artifact_save if needed
+        - Be direct and actionable — no lengthy explanations
+        - Always include WHO TO NOTIFY for each action phase
+        - Reference IHR2005/WHO guidelines where applicable
+      model:
+        model: "${LLM_SERVICE_GENERAL_MODEL_NAME}"
+        api_base: "${LLM_SERVICE_ENDPOINT}"
+        api_key: "${LLM_SERVICE_API_KEY}"
+        timeout: 30
+        stream_timeout: 30
+      tools: []
+      session_service:
+        type: ${PERSISTENCE_TYPE, sql}
+        database_url: ${DATABASE_URL, sqlite:///agent_019d63c5_ed82_73d1_9eab_3b5dafdd7c80.db}
+        default_behavior: PERSISTENT
+      artifact_service:
+        type: ${ARTIFACT_SERVICE_TYPE, s3}
+        bucket_name: ${S3_BUCKET_NAME}
+        endpoint_url: ${S3_ENDPOINT_URL}
+        aws_region: ${AWS_REGION, us-east-1}
+        artifact_scope: namespace
+      artifact_handling_mode: ignore
+      enable_embed_resolution: false
+      enable_artifact_content_instruction: false
+      agent_card:
+        description: "Generates Pre-Arrival, On-Arrival, and Post-Arrival action recommendations. MUST be called AFTER Vessel Screening Agent and MPA Knowledge Agent have completed — it requires their combined output (screening results + high-risk port data) as input to produce actionable protocols."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "generate_pre_arrival_actions"
+            name: "Generate Pre-Arrival Actions"
+            description: "Create action recommendations to execute before a vessel arrives, including risk assessment, advance notifications to Port Health Officer and MPA Operations Centre, and berth/anchorage assignment."
+          - id: "generate_on_arrival_actions"
+            name: "Generate On-Arrival Actions"
+            description: "Create action recommendations for vessel arrival, including health screening, crew inspection, cargo handling restrictions, shore leave decisions, and PPE requirements. Specifies who to notify (Port Health Team, PSC, Immigration)."
+          - id: "generate_post_arrival_actions"
+            name: "Generate Post-Arrival Actions"
+            description: "Create post-arrival follow-up actions including ongoing monitoring, quarantine release criteria, crew movement tracking, and clearance conditions. Includes escalation to National Health Authority or WHO if needed."
+          - id: "process_pan_risk_assessments"
+            name: "Process PAN Risk Assessments"
+            description: "Analyze Port Arrival Notification data to determine vessel risk levels and generate phased response protocols with notification chains."
+      agent_card_publishing:
+        interval_seconds: 10
+      agent_discovery:
+        enabled: true
+      inter_agent_communication:
+        allow_list: []
+        request_timeout_seconds: 30

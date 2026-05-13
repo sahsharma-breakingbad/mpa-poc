@@ -1,0 +1,163 @@
+# Solace Agent Mesh (SAM) - Minikube Local Development Configuration
+# This configuration is optimized for local development on Minikube
+#
+# Features:
+# - No TLS (uses HTTP)
+# - No OIDC authentication (development mode)
+# - ClusterIP service (access via port-forward or minikube service)
+# - Bundled PostgreSQL + SeaweedFS persistence
+# - Minimal resource requirements
+#
+# Usage:
+# 1. Start Minikube: minikube start
+# 2. Install: helm install agent-mesh charts/solace-agent-mesh -f samples/values/minikube-local-dev.yaml
+# 3. Access: kubectl port-forward svc/agent-mesh-solace-agent-mesh 8000:80
+# 4. Open: http://localhost:8000
+
+# SAM Core Configuration
+sam:
+  # Use localhost for local development
+  dnsName: "localhost"
+
+  # Session secret (you can use any string for local dev)
+  sessionSecretKey: "local-dev-secret-key-change-me"
+
+  # Enterprise mode enabled but with OIDC disabled for local dev
+  enterprise: true
+
+  # # Disable authorization for local development (no RBAC)
+  # authorization_service:
+  # #enabled: false
+  # enabled: true
+  # type: "default_rbac"  # Grants access by default for local dev
+  # # Explicitly map sam_dev_user to admin role
+  # userRoleMappings:
+  #   sam_dev_user: "sam_user"
+
+  
+  # Disable authentication for local development
+  authorization:
+    enabled: false
+
+  # # OIDC disabled - leave issuer empty to skip authentication
+  oauthProvider:
+    oidc:
+      issuer: "http://host.minikube.internal:8082/realms/sam"  # Empty issuer disables OIDC authentication
+      clientId: "sam-client"
+      clientSecret: "Sop9n7toUC6am2LlCdhUOhWjSivGBebw"  
+
+   # User to role assignments for RBAC
+  authenticationRbac:
+    users:
+      - identity: "sam_dev_user" # can be email, username, name, etc.
+        roles: ["sam_admin"]
+        description: "SAM Administrator Account"
+      - identity: "user1@example.com"
+        roles: ["sam_user"]
+        description: "Standard SAM User"
+
+     # Dynamic role assignment from IDP claims (alternative to static users)
+    # When configured, SAM will extract roles from the specified OIDC claim
+    idpClaims:
+      enabled: false
+      oidcProvider: "oidc"
+      claimKey: "groups"      # e.g., "groups", "roles", "custom_claim"
+      # Map IDP claim values to SAM roles
+      mappings: {}
+        # Example mappings:
+        # "admin-group": ["sam_admin"]
+        # "user-group": ["sam_user"]
+
+    # Default roles assigned to users (applies to both static and IDP claims methods)
+    # - For IDP claims: assigned when user's claims don't match any mappings
+    # - For static assignments: assigned to authenticated users not explicitly listed in 'users'
+    defaultRoles:
+      - "sam_admin"    
+
+  frontendServerUrl: "http://localhost:8009"
+  platformServiceUrl: "http://localhost:8082"
+  cors:
+    allowedOriginRegex: "https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?"
+
+# Solace Broker Configuration (Helm)
+broker:
+  #url: "ws://my-release-solace-pubsubplus.default.svc.cluster.local:8008"
+  url: "ws://sam-broker-pubsubplus-dev.default.svc.cluster.local:8008"
+  clientUsername: "default"
+  password: "default"
+  vpn: "default"
+
+# LLM Service Configuration
+llmService:
+  #planningModel: "openai/vertex-claude-4-sonnet"
+  #generalModel: "openai/vertex-claude-4-sonnet"
+  #reportModel: "openai/vertex-claude-4-sonnet"
+  #imageModel: "openai/vertex-claude-4-sonnet"
+  #transcriptionModel: "openai/vertex-claude-4-sonnet"
+  planningModel: "openai/claude-opus-4-6"
+  generalModel: "openai/claude-opus-4-6"
+  reportModel: "openai/claude-opus-4-6"
+  imageModel: "openai/claude-opus-4-6"
+  llmServiceEndpoint: "https://lite-llm.mymaas.net/"
+  #llmServiceApiKey: "sk-Ehc0kLkrmqPULzU_yoXGkw"
+  #llmServiceApiKey: "sk-VsDWKgss7eHdpjWr3Qr45w" 
+  llmServiceApiKey: "sk-Qkg2jZVTqQ64-5MKmwfe2Q"
+
+# LLM Service Configuration
+#llmService:
+  #planningModel: "ollama/qwen3:30b"
+  #generalModel: "ollama/qwen3:30b"
+  #reportModel: "ollama/qwen3:30b"
+  #imageModel: "ollama/qwen3:30b"
+  #transcriptionModel: "ollama/qwen3:30b"
+  #llmServiceEndpoint: "http://host.minikube.internal:11434/api/generate"
+  #llmServiceApiKey: "xxxxx"  
+
+# Kubernetes Service Configuration
+service:
+  type: ClusterIP  # ClusterIP for local development
+  #type: NodePort  # NodePort for direct access via minikube IP
+  annotations: {}
+  tls:
+    enabled: false  # No TLS for local development
+    passphrase: ""
+
+
+# Persistence Configuration
+# Uses bundled PostgreSQL and SeaweedFS for local development
+global:
+  persistence:
+    enabled: true
+    namespaceId: "solace-agent-mesh-local" # Unique namespace for local dev
+
+agentDeployer:
+  #chartBaseUrl: "/Users/sahaj_sharma/Documents/Workspace/minikube/sam-enterprise-ga/solace-agent-mesh/files/sam-agent-1.2.5.tgz"
+  chartBaseUrl: "/Users/sahaj_sharma/Documents/Workspace/minikube/sam-enterprise-ga/solace-agent-mesh/files/sam-agent-1.2.4.tgz"
+  localCharts:
+    enabled: true
+    mountpath: "/opt/helm-charts"
+
+# SAM Deployment Configuration
+samDeployment:
+  # No image pull secret needed for local dev if images are public
+  # or if you're using minikube's docker daemon
+  imagePullSecret: ""
+
+  # Main SAM Image
+  image:
+    repository: solace-agent-mesh-enterprise
+    #tag: 1.143.1
+    tag: 1.97.4
+    pullPolicy: IfNotPresent  # Use IfNotPresent to avoid pulling on every restart
+
+  # Agent Deployer image
+  agentDeployer:
+    image:
+      repository: sam-agent-deployer
+      #tag: 1.8.2
+      tag: 1.7.0
+      pullPolicy: IfNotPresent
+
+environmentVariables:
+  ENABLE_ADVANCED_AGENTS: "true"
+  ALLOW_ADVANCED_AGENT_DOCKER_IMAGES: "true"
