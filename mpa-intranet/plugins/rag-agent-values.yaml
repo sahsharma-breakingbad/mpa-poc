@@ -53,8 +53,7 @@ llmService:
   #generalModelName: "openai/vertex-claude-4-sonnet"             # or your model name
   generalModelName: "openai/claude-opus-4-6"             # or your model name
   endpoint: "https://lite-llm.mymaas.net"  # or your LiteLLM endpoint
-  #apiKey: "sk-Ehc0kLkrmqPULzU_yoXGkw"
-  apiKey: "sk-Qkg2jZVTqQ64-5MKmwfe2Q"  # or your API key
+  apiKey: "sk-xxxxxxxxxxxxx"  # or your API key
 
 # RAG-specific environment variables
 # QDRANT_URL: use the K8s service name of your Qdrant deployment
