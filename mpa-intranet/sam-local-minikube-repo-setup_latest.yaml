@@ -99,9 +99,7 @@ llmService:
   reportModel: "openai/claude-opus-4-6"
   imageModel: "openai/claude-opus-4-6"
   llmServiceEndpoint: "https://lite-llm.mymaas.net/"
-  #llmServiceApiKey: "sk-Ehc0kLkrmqPULzU_yoXGkw"
-  #llmServiceApiKey: "sk-VsDWKgss7eHdpjWr3Qr45w" 
-  llmServiceApiKey: "sk-Qkg2jZVTqQ64-5MKmwfe2Q"
+  llmServiceApiKey: "sk-xxxxxxxxxxxxxxxxx"
 
 # LLM Service Configuration
 #llmService:
