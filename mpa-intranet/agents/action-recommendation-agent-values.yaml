@@ -22,4 +22,4 @@ solaceBroker:
 llmService:
   endpoint: "https://lite-llm.mymaas.net/"
   generalModelName: "openai/claude-opus-4-6"
-  apiKey: "sk-Qkg2jZVTqQ64-5MKmwfe2Q"
+  apiKey: "sk-xxxxxxxxxxxxxxxxx"
