@@ -40,8 +40,8 @@ apps:
         model: "${LLM_SERVICE_GENERAL_MODEL_NAME}"
         api_base: "${LLM_SERVICE_ENDPOINT}"
         api_key: "${LLM_SERVICE_API_KEY}"
-        timeout: 30
-        stream_timeout: 30
+        timeout: 90
+        stream_timeout: 90
       tools:
         - tool_type: openapi
           specification_url: "http://localhost:8333/solace-agent-mesh-local-connector-specs/solace-agent-mesh-local/openapi/019d4815-0f81-7c13-861e-54635e835241/20260401-080713-ship-data-openapi.json"
@@ -86,4 +86,4 @@ apps:
       inter_agent_communication:
         allow_list: ["agent_019d5e28_9723_74e3_ac3e_9f50e2f20890"]
         deny_list: ["*"]
-        request_timeout_seconds: 30
+        request_timeout_seconds: 120

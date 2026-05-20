@@ -244,6 +244,7 @@ data:
           agent_discovery: { enabled: true }
           inter_agent_communication:
             allow_list: ["*"]
+            deny_list: ["agent_019d44b4_ea89_71c0_bc18_540aaee3e201"]
             request_timeout_seconds: 2000
 
 ---

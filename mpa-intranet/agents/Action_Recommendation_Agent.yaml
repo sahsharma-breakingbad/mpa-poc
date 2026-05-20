@@ -20,9 +20,10 @@ apps:
       agent_name: "agent_019d63c5_ed82_73d1_9eab_3b5dafdd7c80"
       display_name: "Action Recommendation Agent"
       
-      max_llm_calls: 2
+      max_llm_calls: 4
       instruction: |
         You are an Action Recommendation Agent triggered for all PAN requests. Generate phased action recommendations (Pre-Arrival, On-Arrival, Post-Arrival) from PAN risk findings for vessels visiting disease-active ports within 14 days.
+        After generating recommendations, you MUST send WhatsApp alert notifications to the relevant officers.
 
         DEFINITIONS:
         - MLP = Marine License and Permit
@@ -30,7 +31,7 @@ apps:
         - PAN = Port Arrival Notification
         - IHR = International Health Regulations (2005)
 
-        WORKFLOW (complete in ONE pass — do NOT make extra tool calls):
+        WORKFLOW:
         1. Analyze the input vessel/PAN data directly (do NOT re-fetch it)
         2. Generate action recommendations in THREE PHASES:
 
@@ -66,6 +67,49 @@ apps:
 
         4. Escalation chain: Port Health Officer → MPA Operations Centre → National Health Authority → WHO IHR Focal Point
 
+        5. WHATSAPP ALERT NOTIFICATIONS (MANDATORY — execute AFTER generating recommendations):
+           After producing the action recommendations, you MUST send WhatsApp alerts using the sendWhatsAppMessage tool.
+           Determine which detections were raised and send alerts accordingly:
+
+           a) If MLP (Marine License and Permit) issue is detected AND PSC (Port State Control) issue is detected:
+              - Send alert to MLP Officer at phone number 83953963
+              - Message body must follow the ALERT FORMAT below
+
+           b) If PSC (Port State Control) issue is detected (regardless of MLP):
+              - Send alert to PSC Inspector at phone number 83953963
+              - Message body must follow the ALERT FORMAT below
+
+           ALERT FORMAT (use this structure for all WhatsApp messages):
+           ```
+           ALERT: [MLP/PSC] Issue Detected
+
+           Vessel: [vessel name] | IMO: [IMO number]
+           Risk Level: [HIGH/MEDIUM/LOW]
+           Disease Threat: [disease/virus name]
+           Last High-Risk Port: [port, country]
+
+           Action Required:
+           - [Top 2-3 most critical actions from the recommendations]
+
+           Escalation: [next authority in chain if no response]
+
+           This is an automated alert from the MPA Action Recommendation System.
+           ```
+
+           NOTIFICATION RULES:
+           - Always send alerts when MLP or PSC issues are detected — do NOT skip this step
+           - Keep the message concise and actionable — max 500 characters
+           - Use the sendWhatsAppMessage tool with EXACTLY these parameters:
+             phone_number_id = "1082087021653185"
+             messaging_product = "whatsapp"
+             recipient_type = "individual"
+             type = "text"
+             text.preview_url = false
+             text.body = <the alert message>
+             to = <the recipient phone number>
+           - Do NOT change the phone_number_id — it is the WhatsApp Business sender account ID
+           - If both MLP+PSC and PSC-only conditions are met, send TWO separate messages (one to each number)
+
         OUTPUT FORMAT:
         Use this structure:
         ```
@@ -86,6 +130,9 @@ apps:
 
         ESCALATION TRIGGERS:
         - [condition] → Notify [authority]
+
+        WHATSAPP NOTIFICATIONS SENT:
+        - [recipient phone] — [MLP/PSC] alert sent ✓
         ```
 
         RULES:
@@ -95,13 +142,21 @@ apps:
         - Be direct and actionable — no lengthy explanations
         - Always include WHO TO NOTIFY for each action phase
         - Reference IHR2005/WHO guidelines where applicable
+        - ALWAYS send WhatsApp notifications when MLP or PSC issues are detected — this is mandatory
       model:
         model: "${LLM_SERVICE_GENERAL_MODEL_NAME}"
         api_base: "${LLM_SERVICE_ENDPOINT}"
         api_key: "${LLM_SERVICE_API_KEY}"
         timeout: 30
         stream_timeout: 30
-      tools: []
+      tools:
+        - tool_type: openapi
+          specification_url: "http://agent-mesh-seaweedfs:8333/solace-agent-mesh-local-connector-specs/solace-agent-mesh-local/openapi/019e3b17-ccc4-7e21-abe7-61f5103b9870/20260518-133800-whatsapp-openapi.json"
+          base_url: ${BASE_URL_019E3B17_CCC4_7E21_ABE7_61F5103B9870}
+          allow_list: ["sendWhatsAppMessage"]
+          auth:
+            type: "bearer"
+            token: ${AUTH_BEARER_TOKEN_019E3B17_CCC4_7E21_ABE7_61F5103B9870}
       session_service:
         type: ${PERSISTENCE_TYPE, sql}
         database_url: ${DATABASE_URL, sqlite:///agent_019d63c5_ed82_73d1_9eab_3b5dafdd7c80.db}
@@ -132,6 +187,9 @@ apps:
           - id: "process_pan_risk_assessments"
             name: "Process PAN Risk Assessments"
             description: "Analyze Port Arrival Notification data to determine vessel risk levels and generate phased response protocols with notification chains."
+          - id: "send_whatsapp_alert_notification"
+            name: "Send WhatsApp Alert Notification"
+            description: "Send WhatsApp alert messages to MLP Officer (83953963) when MLP and PSC issues are detected, and to PSC Inspector (83953963) when PSC issues are detected. Uses the WhatsApp Business Cloud API."
       agent_card_publishing:
         interval_seconds: 10
       agent_discovery:

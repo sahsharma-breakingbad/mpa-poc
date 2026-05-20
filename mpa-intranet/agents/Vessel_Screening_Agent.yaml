@@ -46,8 +46,8 @@ apps:
         model: "${LLM_SERVICE_GENERAL_MODEL_NAME}"
         api_base: "${LLM_SERVICE_ENDPOINT}"
         api_key: "${LLM_SERVICE_API_KEY}"
-        timeout: 30
-        stream_timeout: 30
+        timeout: 90
+        stream_timeout: 90
       tools: []
       session_service:
         type: ${PERSISTENCE_TYPE, sql}
@@ -85,4 +85,4 @@ apps:
         enabled: true
       inter_agent_communication:
         allow_list: ["agent_019d44b4_ea89_71c0_bc18_540aaee3e201"]
-        request_timeout_seconds: 30
+        request_timeout_seconds: 120
